@@ -26,6 +26,7 @@
             <p class="font-medium">Target IFC File:</p>
             <p id="targetIfcName">Initializing connection to Trimble Connect...</p>
             <p id="targetIfcInfo" class="text-xs text-gray-500"></p>
+            <p id="targetProjectInfo" class="text-xs text-gray-500"></p>
         </div>
 
         <form id="validationForm" class="space-y-4">
@@ -57,60 +58,101 @@
         const resultsContent = document.getElementById('resultsContent');
         const targetIfcNameEl = document.getElementById('targetIfcName');
         const targetIfcInfoEl = document.getElementById('targetIfcInfo');
+        const targetProjectInfoEl = document.getElementById('targetProjectInfo');
         const validationForm = document.getElementById('validationForm');
 
         // Backend API URL
-        const apiUrl = 'https://KMulvey.pythonanywhere.com/validate'; // Replace with your actual backend URL
+        const apiUrl = 'https://your-username.pythonanywhere.com/validate'; // Replace with your actual backend URL
 
         let connectClient = null;
         let targetIfcIdentifier = null;
         let targetIfcName = "Unknown Model";
+        let targetProjectId = null;
 
         // --- Workspace API Initialization ---
         async function initializeConnectAPI() {
+            // ... (Initialization logic remains the same) ...
             targetIfcNameEl.textContent = "Initializing connection...";
-            console.log("Attempting to initialize Workspace API..."); // Log start
+            console.log("Attempting to initialize Workspace API...");
 
             try {
-                // *** ADDED DIAGNOSTIC LOG ***
                 console.log("Checking if TrimbleConnectWorkspace is defined:", typeof TrimbleConnectWorkspace);
-
                 if (typeof TrimbleConnectWorkspace === 'undefined') {
-                    showStatus("Error: Trimble Connect Workspace API client not found. Check script URL and network access.", 'error');
-                    console.error("Trimble Connect Workspace API client library (TrimbleConnectWorkspace) not defined.");
+                    showStatus("Error: Trimble Connect Workspace API client not found.", 'error');
+                    console.error("TrimbleConnectWorkspace not defined.");
                     targetIfcNameEl.textContent = "Failed to load Connect API.";
                     validateButton.disabled = true;
-                    return; // Stop execution if library isn't loaded
+                    return;
                 }
 
-                // If the typeof check passes, proceed with connection
                 connectClient = await TrimbleConnectWorkspace.connect(window.parent, (event, data) => {
                     console.log('Received event from Trimble Connect:', event, data);
                 });
 
                 console.log("Workspace API Client Initialized:", connectClient);
-                showStatus("Workspace API connected. Getting viewer models...", 'info');
+                showStatus("Workspace API connected. Getting context and models...", 'info');
 
-                await getModelContext();
+                await Promise.all([
+                     getProjectContext(),
+                     getModelContext()
+                ]);
+
+                if (targetProjectId && targetIfcIdentifier) {
+                     validateButton.disabled = false;
+                     showStatus("Ready to validate.", 'success');
+                } else {
+                     validateButton.disabled = true;
+                     if (!targetProjectId) showStatus("Could not identify project context.", 'error');
+                     else if (!targetIfcIdentifier) showStatus("Could not identify target model identifier.", 'error');
+                }
 
             } catch (error) {
-                showStatus("Error initializing Workspace API. Is the extension running inside Trimble Connect?", 'error');
-                console.error("Workspace API Initialization failed:", error);
+                showStatus("Error initializing Workspace API or getting initial data.", 'error');
+                console.error("Initialization/Data Fetch failed:", error);
                 targetIfcNameEl.textContent = "Error connecting to Trimble Connect.";
                 validateButton.disabled = true;
             }
         }
 
+        // --- Function to get Project Context ---
+        async function getProjectContext() {
+            // ... (getProjectContext logic remains the same) ...
+             if (!connectClient || !connectClient.context) {
+                 console.error("connectClient or connectClient.context is not defined.");
+                 targetProjectInfoEl.textContent = "Cannot access context API.";
+                 return;
+             }
+             try {
+                 const context = await connectClient.context.get();
+                 console.log("Context received from context.get():", context);
+                 if (context && context.projectId) {
+                     targetProjectId = context.projectId;
+                     targetProjectInfoEl.textContent = `Project ID: ${targetProjectId}`;
+                     console.log(`Using Project ID: ${targetProjectId}`);
+                 } else if (context && context.project && context.project.id) {
+                     targetProjectId = context.project.id;
+                     targetProjectInfoEl.textContent = `Project ID: ${targetProjectId}`;
+                     console.log(`Using Project ID: ${targetProjectId}`);
+                 } else {
+                     targetProjectId = null;
+                     targetProjectInfoEl.textContent = "Could not find Project ID in context.";
+                     console.error("Could not find Project ID in context object:", context);
+                 }
+             } catch(error) {
+                 console.error("Failed to get project context:", error);
+                 targetProjectInfoEl.textContent = "Error getting project info.";
+             }
+        }
+
+
         // --- Function to get Model Context from Viewer ---
         async function getModelContext() {
+            // ... (getModelContext logic remains the same) ...
              if (!connectClient || !connectClient.viewer) {
-                 showStatus("Error: Workspace API client or viewer module not available.", 'error');
-                 console.error("connectClient or connectClient.viewer is not defined after initialization.");
+                 console.error("connectClient or connectClient.viewer is not defined.");
                  targetIfcNameEl.textContent = "Cannot access viewer API.";
-                 validateButton.disabled = true;
                  return;
             }
-            // ... (rest of getModelContext function remains the same) ...
             try {
                 const models = await connectClient.viewer.getModels();
                 console.log("Models received from viewer.getModels():", models);
@@ -144,47 +186,66 @@
                         console.error("Could not find usable identifier in model object:", primaryModel);
                     }
                     targetIfcNameEl.textContent = targetIfcName;
-                    if (targetIfcIdentifier) {
-                        validateButton.disabled = false;
-                        showStatus("Ready to validate.", 'success');
-                    } else {
-                        validateButton.disabled = true;
-                        showStatus("Could not identify target model identifier.", 'error');
-                    }
+
                 } else {
                     targetIfcNameEl.textContent = "No models found in the viewer.";
                     targetIfcInfoEl.textContent = "Load an IFC model into the viewer.";
-                    showStatus("No models reported by the viewer API.", 'info');
-                    validateButton.disabled = true;
                     console.log("viewer.getModels() returned empty or null array.");
+                    targetIfcIdentifier = null;
                 }
             } catch (error) {
                 showStatus("Error getting models from Workspace API viewer.", 'error');
                 console.error("Failed to get viewer models:", error);
                 targetIfcNameEl.textContent = "Error getting model info.";
-                validateButton.disabled = true;
+                 targetIfcIdentifier = null;
             }
         }
 
         // --- Form Submission Logic ---
         validationForm.addEventListener('submit', async (event) => {
-            // ... (form submission logic remains the same) ...
              event.preventDefault();
             const idsFile = idsFileInput.files[0];
+
+            // *** ADDED DEBUGGING LOGS ***
+            console.log("--- Preparing to submit validation ---");
+            console.log("Value of targetProjectId:", targetProjectId);
+            console.log("Value of targetIfcIdentifier:", targetIfcIdentifier);
+            console.log("Value of idsFile:", idsFile ? idsFile.name : 'No file selected');
+            // *** END DEBUGGING LOGS ***
+
+            if (!targetProjectId) {
+                 showStatus('Error: Target Project ID not identified before submit.', 'error');
+                 console.error("Submit blocked: targetProjectId is null or empty.");
+                 return;
+            }
             if (!targetIfcIdentifier) {
-                showStatus('Error: Target IFC model not identified.', 'error');
+                showStatus('Error: Target IFC model identifier not identified before submit.', 'error');
+                console.error("Submit blocked: targetIfcIdentifier is null or empty.");
                 return;
             }
             if (!idsFile) {
                 showStatus('Please select an IDS file.', 'error');
+                 console.error("Submit blocked: idsFile is missing.");
                 return;
             }
+
             validateButton.disabled = true;
             showStatus('Processing... Sending data to validation server.', 'processing');
             resultsDiv.classList.add('hidden');
+
             const formData = new FormData();
-            formData.append('ifcTarget', targetIfcIdentifier);
+            formData.append('projectId', targetProjectId);
+            formData.append('ifcIdentifier', targetIfcIdentifier);
             formData.append('idsFile', idsFile);
+
+             // *** Log the FormData just before sending (for advanced debugging) ***
+             // Note: Logging FormData directly isn't straightforward, this shows keys
+             console.log("FormData keys being sent:");
+             for (let key of formData.keys()) {
+                console.log(`  - ${key}`);
+             }
+             // You might need to check the Network tab payload for actual values
+
             try {
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -205,7 +266,7 @@
                 showStatus('Error: Could not connect to the validation server.', 'error');
                 resultsDiv.classList.add('hidden');
             } finally {
-                validateButton.disabled = !targetIfcIdentifier;
+                validateButton.disabled = !(targetProjectId && targetIfcIdentifier);
             }
         });
 
@@ -218,9 +279,8 @@
             statusDiv.classList.add(`status-${type}`);
             statusDiv.classList.remove('hidden');
         }
-
         function displayResults(data) {
-            // ... (displayResults function remains the same) ...
+             // ... (displayResults function remains the same) ...
              resultsContent.textContent = JSON.stringify(data, null, 2);
             resultsDiv.classList.remove('hidden');
         }
