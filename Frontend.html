@@ -5,169 +5,226 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IFC-IDS Validator</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/client.js"></script>
     <style>
-        /* Add custom styles if needed, or rely purely on Tailwind */
-        body {
-            font-family: 'Inter', sans-serif; /* Using Inter font from Tailwind */
-        }
-        /* Style for the results area */
-        #results pre {
-            white-space: pre-wrap; /* Allow text wrapping */
-            word-wrap: break-word; /* Break long words */
-            max-height: 400px; /* Limit height and make scrollable */
-            overflow-y: auto;
-            background-color: #f3f4f6; /* bg-gray-100 */
-            border: 1px solid #d1d5db; /* border-gray-300 */
-            border-radius: 0.375rem; /* rounded-md */
-            padding: 1rem; /* p-4 */
-            margin-top: 1rem; /* mt-4 */
-        }
-        /* Style for status messages */
-        #status {
-            margin-top: 1rem; /* mt-4 */
-            padding: 0.75rem; /* p-3 */
-            border-radius: 0.375rem; /* rounded-md */
-        }
-
-        .status-processing {
-            background-color: #eff6ff; /* bg-blue-100 */
-            color: #1e40af; /* text-blue-800 */
-            border: 1px solid #bfdbfe; /* border-blue-200 */
-        }
-
-        .status-success {
-            background-color: #f0fdf4; /* bg-green-100 */
-            color: #15803d; /* text-green-800 */
-            border: 1px solid #bbf7d0; /* border-green-200 */
-        }
-
-        .status-error {
-            background-color: #fef2f2; /* bg-red-100 */
-            color: #b91c1c; /* text-red-800 */
-            border: 1px solid #fecaca; /* border-red-200 */
-        }
+        body { font-family: 'Inter', sans-serif; }
+        #results pre { white-space: pre-wrap; word-wrap: break-word; max-height: 300px; overflow-y: auto; background-color: #f3f4f6; border: 1px solid #d1d5db; border-radius: 0.375rem; padding: 1rem; margin-top: 1rem; }
+        #status { margin-top: 1rem; padding: 0.75rem; border-radius: 0.375rem; }
+        .status-info { background-color: #f0f9ff; color: #075985; border: 1px solid #e0f2fe; }
+        .status-processing { background-color: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+        .status-success { background-color: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+        .status-error { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+        #targetIfcDisplay { margin-bottom: 1rem; padding: 0.75rem; border: 1px dashed #ccc; border-radius: 0.375rem; background-color: #fafafa; }
     </style>
 </head>
 <body class="bg-gray-50 flex items-center justify-center min-h-screen p-4">
 
     <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-2xl">
-        <h1 class="text-2xl font-bold mb-6 text-center text-gray-700">IFC-IDS Validator</h1>
+        <h1 class="text-2xl font-bold mb-6 text-center text-gray-700">IFC IDS Validator</h1>
+
+        <div id="targetIfcDisplay" class="text-sm text-gray-700">
+            <p class="font-medium">Target IFC File:</p>
+            <p id="targetIfcName">Attempting to identify model from Trimble Connect...</p>
+            <p id="targetIfcInfo" class="text-xs text-gray-500"></p>
+        </div>
 
         <form id="validationForm" class="space-y-4">
-            <div>
-                <label for="ifcFile" class="block text-sm font-medium text-gray-700 mb-1">Select IFC File:</label>
-                <input type="file" id="ifcFile" name="ifcFile" accept=".ifc" required
-                       class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-                <p class="mt-1 text-xs text-gray-500">Upload the IFC model file.</p>
-            </div>
-
             <div>
                 <label for="idsFile" class="block text-sm font-medium text-gray-700 mb-1">Select IDS File:</label>
                 <input type="file" id="idsFile" name="idsFile" accept=".ids, .xml" required
                        class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100">
-                <p class="mt-1 text-xs text-gray-500">Upload the IDS definition file (XML format).</p>
-            </div>
+                 <p class="mt-1 text-xs text-gray-500">Upload the IDS definition file (XML format).</p>
+           </div>
 
-            <button type="submit" id="validateButton"
-                    class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50">
-                Validate Files
+            <button type="submit" id="validateButton" disabled
+                    class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                Validate Model
             </button>
         </form>
 
         <div id="status" class="hidden"></div>
-
         <div id="results" class="mt-6 hidden">
             <h2 class="text-lg font-semibold text-gray-700 mb-2">Validation Results:</h2>
             <pre id="resultsContent" class="text-sm"></pre>
         </div>
-
     </div>
 
-    <script>const form = document.getElementById('validationForm');
-        const ifcFileInput = document.getElementById('ifcFile');
+    <script>
+        const form = document.getElementById('validationForm');
+        // No ifcFileInput needed
         const idsFileInput = document.getElementById('idsFile');
         const validateButton = document.getElementById('validateButton');
         const statusDiv = document.getElementById('status');
         const resultsDiv = document.getElementById('results');
         const resultsContent = document.getElementById('resultsContent');
+        const targetIfcNameEl = document.getElementById('targetIfcName');
+        const targetIfcInfoEl = document.getElementById('targetIfcInfo');
 
-        // Backend API endpoint URL (ensure your Flask app is running)
-        // If Flask is running on the same machine, localhost is fine.
-        // If running in a container or different machine, use its IP address.
-        const apiUrl = 'https://kmulvey.pythonanywhere.com/validate';
+        // *** Backend API URL (ensure this points to your hosted backend) ***
+        const apiUrl = 'https://your-username.pythonanywhere.com/validate'; // Use your actual PythonAnywhere URL (or localhost:8080 for local testing)
 
-        form.addEventListener('submit', async (event) => {
-            event.preventDefault(); // Prevent default form submission
+        let connectClient = null; // To hold the Workspace API client instance
+        let targetIfcIdentifier = null; // To hold the file ID or URL from Connect
 
-            const ifcFile = ifcFileInput.files[0];
-            const idsFile = idsFileInput.files[0];
+        // --- Workspace API Initialization ---
+        async function initializeConnectAPI() {
+            try {
+                // Check if the Trimble Connect Workspace API client library is loaded
+                if (typeof TrimbleConnectWorkspace === 'undefined') {
+                    showStatus("Error: Trimble Connect Workspace API client not loaded.", 'error');
+                    console.error("Trimble Connect Workspace API client not found.");
+                    return;
+                }
 
-            if (!ifcFile || !idsFile) {
-                showStatus('Please select both an IFC and an IDS file.', 'error');
-                return;
+                // Initialize the client
+                connectClient = await TrimbleConnectWorkspace.connect(window.parent, (event, data) => {
+                    // Optional: Event listener for messages from the host
+                    console.log('Received event from Trimble Connect:', event, data);
+                    // You might listen for 'context:changed' or 'selection:changed' events here
+                }, /* optional timeout in ms */);
+
+                showStatus("Workspace API connected. Getting context...", 'info');
+                console.log("Workspace API Client Initialized:", connectClient);
+
+                // Attempt to get context (project/model info)
+                await getModelContext();
+
+            } catch (error) {
+                showStatus("Error initializing Workspace API. Is the extension running inside Trimble Connect?", 'error');
+                console.error("Workspace API Initialization failed:", error);
+                targetIfcNameEl.textContent = "Error connecting to Trimble Connect.";
+                validateButton.disabled = true; // Keep button disabled
             }
+        }
 
-            // Disable button and show processing status
-            validateButton.disabled = true;
-            showStatus('Processing... Uploading files and running validation.', 'processing');
-            resultsDiv.classList.add('hidden'); // Hide previous results
-
-            // Create FormData object to send files
-            const formData = new FormData();
-            formData.append('ifcFile', ifcFile); // Key must match Flask backend ('ifcFile')
-            formData.append('idsFile', idsFile); // Key must match Flask backend ('idsFile')
+        // --- Function to get Model Context ---
+        async function getModelContext() {
+            if (!connectClient) return;
 
             try {
-                // Send the POST request to the Flask API endpoint
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    body: formData,
-                    // Note: No 'Content-Type' header needed for FormData;
-                    // the browser sets it correctly with the boundary.
-                });
+                // *** Example: Get current context (check API docs for exact method) ***
+                // This might give project ID, folder ID, potentially file ID if viewer is open
+                const context = await connectClient.context.get(); // Replace with actual method
+                console.log("Trimble Connect Context:", context);
 
-                // Get the response body as JSON
-                const resultData = await response.json();
+                // *** Placeholder Logic: Extract File Info ***
+                // This part is highly dependent on what the 'context.get()' or other
+                // specific API calls (like viewer.getModel()?) return.
+                // You NEED to inspect the 'context' object in your browser console
+                // when running inside Trimble Connect to find the correct properties.
 
-                // Check if the response status indicates success (e.g., 200 OK)
-                if (response.ok) {
-                    // Display success status and results
-                    showStatus(`Validation complete: ${resultData.message || 'Status received.'}`, 'success');
-                    displayResults(resultData);
+                let modelName = "Unknown Model";
+                let fileId = null; // Or maybe a download URL?
+
+                // --- Hypothetical Example ---
+                if (context && context.file && context.file.id) { // If context directly gives file ID
+                     fileId = context.file.id;
+                     modelName = context.file.name || `File ID: ${fileId}`;
+                } else if (context && context.models && context.models.length > 0) { // If context gives a list of models
+                     // Assuming the first model is the relevant one in the viewer
+                     const model = context.models[0];
+                     fileId = model.id; // Or model.fileId? Check API docs.
+                     modelName = model.name || `Model ID: ${fileId}`;
                 } else {
-                    // Handle HTTP errors (e.g., 400 Bad Request, 500 Internal Server Error)
-                    const errorMessage = resultData.error || `Server responded with status ${response.status}`;
-                    console.error('API Error:', resultData);
-                    showStatus(`Error: ${errorMessage}`, 'error');
-                    resultsDiv.classList.add('hidden'); // Hide results area on error
+                     // Try other methods if needed, e.g., viewer specific APIs
+                     // const viewerModel = await connectClient.viewer.getCurrentModel(); // Fictional method
+                }
+                // --- End Hypothetical Example ---
+
+
+                if (fileId) {
+                    targetIfcIdentifier = fileId; // Store the identifier (could be ID or URL)
+                    targetIfcNameEl.textContent = modelName;
+                    targetIfcInfoEl.textContent = `Using ID: ${targetIfcIdentifier}`; // Or "Using URL: ..."
+                    validateButton.disabled = false; // Enable button only if we found a target
+                    showStatus("Ready to validate.", 'success');
+                } else {
+                    targetIfcNameEl.textContent = "Could not identify target model.";
+                    targetIfcInfoEl.textContent = "Ensure a model is loaded in the viewer.";
+                    showStatus("Could not identify target model.", 'error');
+                    validateButton.disabled = true;
                 }
 
             } catch (error) {
-                // Handle network errors or issues connecting to the server
+                showStatus("Error getting model context from Workspace API.", 'error');
+                console.error("Failed to get context:", error);
+                targetIfcNameEl.textContent = "Error getting model info.";
+                validateButton.disabled = true;
+            }
+        }
+
+
+        // --- Form Submission Logic ---
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const idsFile = idsFileInput.files[0];
+
+            // Check if we have the target IFC identifier and an IDS file
+            if (!targetIfcIdentifier) {
+                showStatus('Error: Target IFC model not identified from Trimble Connect.', 'error');
+                return;
+            }
+            if (!idsFile) {
+                showStatus('Please select an IDS file.', 'error');
+                return;
+            }
+
+            validateButton.disabled = true;
+            showStatus('Processing... Sending data to validation server.', 'processing');
+            resultsDiv.classList.add('hidden');
+
+            const formData = new FormData();
+            // *** Send the identifier instead of the file blob ***
+            formData.append('ifcTarget', targetIfcIdentifier); // Key name changed
+            formData.append('idsFile', idsFile); // Keep IDS file upload
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const resultData = await response.json();
+
+                if (response.ok) {
+                    showStatus(`Validation complete: ${resultData.message || 'Status received.'}`, 'success');
+                    displayResults(resultData);
+                } else {
+                    const errorMessage = resultData.error || `Server responded with status ${response.status}`;
+                    console.error('API Error:', resultData);
+                    showStatus(`Error: ${errorMessage}`, 'error');
+                    resultsDiv.classList.add('hidden');
+                }
+
+            } catch (error) {
                 console.error('Network or Fetch Error:', error);
-                showStatus('Error: Could not connect to the validation server. Is it running?', 'error');
-                resultsDiv.classList.add('hidden'); // Hide results area on error
+                showStatus('Error: Could not connect to the validation server.', 'error');
+                resultsDiv.classList.add('hidden');
             } finally {
-                // Re-enable the button regardless of success or failure
-                validateButton.disabled = false;
+                // Re-enable button only if we still have a target identified
+                validateButton.disabled = !targetIfcIdentifier;
             }
         });
 
-        // Helper function to display status messages
+        // --- Helper Functions (showStatus, displayResults - unchanged) ---
         function showStatus(message, type = 'processing') {
             statusDiv.textContent = message;
-            statusDiv.className = ''; // Clear existing classes
-            statusDiv.classList.add('mt-4', 'p-3', 'rounded-md'); // Base styles
-            statusDiv.classList.add(`status-${type}`); // Add type-specific style
-            statusDiv.classList.remove('hidden'); // Make status visible
+            statusDiv.className = '';
+            statusDiv.classList.add('mt-4', 'p-3', 'rounded-md');
+            statusDiv.classList.add(`status-${type}`);
+            statusDiv.classList.remove('hidden');
         }
 
-        // Helper function to display the validation results
         function displayResults(data) {
-            // Format the JSON data nicely for display in the <pre> tag
-            resultsContent.textContent = JSON.stringify(data, null, 2); // Pretty print JSON
-            resultsDiv.classList.remove('hidden'); // Make results visible
-        }</script>
+            resultsContent.textContent = JSON.stringify(data, null, 2);
+            resultsDiv.classList.remove('hidden');
+        }
+
+        // --- Initialize API on page load ---
+        window.addEventListener('load', initializeConnectAPI);
+
+    </script>
 
 </body>
 </html>
