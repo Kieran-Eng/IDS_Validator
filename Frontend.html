@@ -71,7 +71,6 @@
 
         // --- Workspace API Initialization ---
         async function initializeConnectAPI() {
-            // ... (Initialization logic remains the same) ...
             targetIfcNameEl.textContent = "Initializing connection...";
             console.log("Attempting to initialize Workspace API...");
 
@@ -89,7 +88,8 @@
                     console.log('Received event from Trimble Connect:', event, data);
                 });
 
-                console.log("Workspace API Client Initialized:", connectClient);
+                // *** Log the connectClient object to inspect its structure ***
+                console.log("Workspace API Client Initialized. connectClient object:", connectClient);
                 showStatus("Workspace API connected. Getting context and models...", 'info');
 
                 await Promise.all([
@@ -103,12 +103,11 @@
                      showStatus("Ready to validate.", 'success');
                 } else {
                      validateButton.disabled = true;
-                     // Update status based on which ID is missing
                      if (!targetProjectId && !targetIfcIdentifier){
                         showStatus("Could not identify project context or target model.", 'error');
                      } else if (!targetProjectId) {
                         showStatus("Could not identify project context.", 'error');
-                     } else { // Only targetIfcIdentifier must be missing
+                     } else {
                         showStatus("Could not identify target model identifier.", 'error');
                      }
                 }
@@ -121,46 +120,74 @@
             }
         }
 
-        // --- Function to get Project Context ---
+        // --- Function to get Project Context (Revised) ---
         async function getProjectContext() {
-            // ... (getProjectContext logic remains the same) ...
-             if (!connectClient || !connectClient.context) {
-                 console.error("connectClient or connectClient.context is not defined.");
-                 targetProjectInfoEl.textContent = "Cannot access context API.";
-                 targetProjectId = null; // Ensure it's null on error
-                 return;
+             targetProjectId = null; // Reset before trying
+             targetProjectInfoEl.textContent = "Fetching project info..."; // Update UI
+
+             if (!connectClient) {
+                  console.error("getProjectContext called but connectClient is null.");
+                  targetProjectInfoEl.textContent = "API Client not ready.";
+                  return;
              }
+
              try {
-                 const context = await connectClient.context.get();
-                 console.log("Context received from context.get():", context);
-                 if (context && context.projectId) {
+                 let context = null;
+                 // Try using connectClient.context first
+                 if (connectClient.context && typeof connectClient.context.get === 'function') {
+                     console.log("Attempting to get context via connectClient.context.get()");
+                     context = await connectClient.context.get();
+                     console.log("Context received from context.get():", context);
+                 }
+                 // If context doesn't exist or didn't work, try connectClient.project
+                 else if (connectClient.project && typeof connectClient.project.getCurrentProject === 'function') {
+                     console.log("connectClient.context not found or not usable, trying connectClient.project.getCurrentProject()");
+                     // Note: getCurrentProject might return slightly different structure
+                     const projectInfo = await connectClient.project.getCurrentProject();
+                     console.log("Project info received from project.getCurrentProject():", projectInfo);
+                     // Adapt structure if needed - assuming it might have a 'project' property or be the project object directly
+                     context = projectInfo; // Or maybe context = { project: projectInfo } depending on result
+                 }
+                  else {
+                      console.error("Neither connectClient.context.get nor connectClient.project.getCurrentProject seem available.");
+                      targetProjectInfoEl.textContent = "Cannot access context/project API.";
+                      return; // Exit if no method found
+                  }
+
+                 // Now extract the project ID from whatever context/projectInfo object we got
+                 if (context && context.projectId) { // Check for projectId directly
                      targetProjectId = context.projectId;
-                     targetProjectInfoEl.textContent = `Project ID: ${targetProjectId}`;
-                     console.log(`Using Project ID: ${targetProjectId}`);
-                 } else if (context && context.project && context.project.id) {
+                 } else if (context && context.project && context.project.id) { // Check for nested project.id
                      targetProjectId = context.project.id;
+                 } else if (context && context.id) { // Check if the object itself has the id (e.g., from getCurrentProject)
+                     targetProjectId = context.id;
+                 }
+
+                 // Update UI based on result
+                 if (targetProjectId) {
                      targetProjectInfoEl.textContent = `Project ID: ${targetProjectId}`;
                      console.log(`Using Project ID: ${targetProjectId}`);
                  } else {
-                     targetProjectId = null;
-                     targetProjectInfoEl.textContent = "Could not find Project ID in context.";
-                     console.error("Could not find Project ID in context object:", context);
+                     targetProjectInfoEl.textContent = "Could not find Project ID in context/project data.";
+                     console.error("Could not find Project ID in received object:", context);
                  }
+
              } catch(error) {
                  console.error("Failed to get project context:", error);
                  targetProjectInfoEl.textContent = "Error getting project info.";
-                 targetProjectId = null; // Ensure it's null on error
+                 targetProjectId = null; // Ensure null on error
              }
         }
-
 
         // --- Function to get Model Context from Viewer ---
         async function getModelContext() {
             // ... (getModelContext logic remains the same) ...
+             targetIfcIdentifier = null; // Reset before trying
+             targetIfcInfoEl.textContent = "Fetching model info..."; // Update UI
+
              if (!connectClient || !connectClient.viewer) {
                  console.error("connectClient or connectClient.viewer is not defined.");
                  targetIfcNameEl.textContent = "Cannot access viewer API.";
-                 targetIfcIdentifier = null; // Ensure it's null on error
                  return;
             }
             try {
@@ -202,7 +229,6 @@
                     targetIfcNameEl.textContent = "No models found in the viewer.";
                     targetIfcInfoEl.textContent = "Load an IFC model into the viewer.";
                     console.log("viewer.getModels() returned empty or null array.");
-                    targetIfcIdentifier = null;
                 }
             } catch (error) {
                 showStatus("Error getting models from Workspace API viewer.", 'error');
@@ -214,17 +240,13 @@
 
         // --- Form Submission Logic ---
         validationForm.addEventListener('submit', async (event) => {
+            // ... (submit logic remains the same) ...
              event.preventDefault();
             const idsFile = idsFileInput.files[0];
-
-            // *** MOVED DEBUGGING LOGS TO THE TOP ***
             console.log("--- Submit Handler Started ---");
             console.log("Value of targetProjectId at submit:", targetProjectId);
             console.log("Value of targetIfcIdentifier at submit:", targetIfcIdentifier);
             console.log("Value of idsFile at submit:", idsFile ? idsFile.name : 'No file selected');
-            // *** END DEBUGGING LOGS ***
-
-            // Now perform checks
             if (!targetProjectId) {
                  showStatus('Error: Target Project ID not identified before submit.', 'error');
                  console.error("Submit blocked: targetProjectId is null or empty.");
@@ -240,22 +262,17 @@
                  console.error("Submit blocked: idsFile is missing.");
                 return;
             }
-
-            // If checks pass, continue...
             validateButton.disabled = true;
             showStatus('Processing... Sending data to validation server.', 'processing');
             resultsDiv.classList.add('hidden');
-
             const formData = new FormData();
             formData.append('projectId', targetProjectId);
             formData.append('ifcIdentifier', targetIfcIdentifier);
             formData.append('idsFile', idsFile);
-
              console.log("FormData keys being sent:");
              for (let key of formData.keys()) {
                 console.log(`  - ${key}`);
              }
-
             try {
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -280,7 +297,7 @@
             }
         });
 
-        // --- Helper Functions (showStatus, displayResults - unchanged) ---
+        // --- Helper Functions ---
         function showStatus(message, type = 'processing') {
             statusDiv.textContent = message;
             statusDiv.className = '';
@@ -300,3 +317,14 @@
 
 </body>
 </html>
+```
+
+**Instructions:**
+
+1.  **Deploy** the updated frontend code.
+2.  **Reload** Trimble Connect and your extension.
+3.  Open the **Console** in your browser's Developer Tools (F12).
+4.  Look for the line: `Workspace API Client Initialized. connectClient object: ...`. Expand the object that's logged there. What properties does it show? Does it have `.context`? Does it have `.project`?
+5.  Look for the logs from the `getProjectContext` function. Does it say it's trying `context.get()` or `project.getCurrentProject()`? What object structure is logged for the context or project info? Does it successfully find and log the Project ID?
+
+This should give us a clear picture of what the Workspace API client object looks like and how to correctly access the project informati
