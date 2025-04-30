@@ -24,7 +24,7 @@
 
         <div id="targetIfcDisplay" class="text-sm text-gray-700">
             <p class="font-medium">Target IFC File:</p>
-            <p id="targetIfcName">Attempting to identify model from Trimble Connect...</p>
+            <p id="targetIfcName">Initializing connection to Trimble Connect...</p>
             <p id="targetIfcInfo" class="text-xs text-gray-500"></p>
         </div>
 
@@ -50,8 +50,6 @@
     </div>
 
     <script>
-        const form = document.getElementById('validationForm');
-        // No ifcFileInput needed
         const idsFileInput = document.getElementById('idsFile');
         const validateButton = document.getElementById('validateButton');
         const statusDiv = document.getElementById('status');
@@ -59,110 +57,136 @@
         const resultsContent = document.getElementById('resultsContent');
         const targetIfcNameEl = document.getElementById('targetIfcName');
         const targetIfcInfoEl = document.getElementById('targetIfcInfo');
+        const validationForm = document.getElementById('validationForm'); // Get form reference
 
-        // *** Backend API URL (ensure this points to your hosted backend) ***
-        const apiUrl = 'https:// KMulvey.pythonanywhere.com/validate'; // Use your actual PythonAnywhere URL (or localhost:8080 for local testing)
+        // Backend API URL
+        const apiUrl = 'https://your-username.pythonanywhere.com/validate'; // Replace with your actual backend URL
 
-        let connectClient = null; // To hold the Workspace API client instance
-        let targetIfcIdentifier = null; // To hold the file ID or URL from Connect
+        let connectClient = null;
+        let targetIfcIdentifier = null; // Will store File ID or Download URL
+        let targetIfcName = "Unknown Model"; // Store name separately
 
         // --- Workspace API Initialization ---
         async function initializeConnectAPI() {
+            targetIfcNameEl.textContent = "Initializing connection...";
             try {
-                // Check if the Trimble Connect Workspace API client library is loaded
                 if (typeof TrimbleConnectWorkspace === 'undefined') {
-                    showStatus("Error: Trimble Connect Workspace API client not loaded.", 'error');
-                    console.error("Trimble Connect Workspace API client not found.");
+                    showStatus("Error: Trimble Connect Workspace API client not found. Check script URL and network access.", 'error');
+                    console.error("Trimble Connect Workspace API client library (TrimbleConnectWorkspace) not defined.");
+                    targetIfcNameEl.textContent = "Failed to load Connect API.";
+                    validateButton.disabled = true;
                     return;
                 }
 
-                // Initialize the client
                 connectClient = await TrimbleConnectWorkspace.connect(window.parent, (event, data) => {
-                    // Optional: Event listener for messages from the host
                     console.log('Received event from Trimble Connect:', event, data);
-                    // You might listen for 'context:changed' or 'selection:changed' events here
-                }, /* optional timeout in ms */);
+                    // Potential future use: listen for 'viewer:model:loaded' or similar events
+                    // if (event === 'viewer:model:loaded') { getModelContext(); }
+                });
 
-                showStatus("Workspace API connected. Getting context...", 'info');
                 console.log("Workspace API Client Initialized:", connectClient);
+                showStatus("Workspace API connected. Getting viewer models...", 'info');
 
-                // Attempt to get context (project/model info)
+                // Attempt to get model info from the viewer
                 await getModelContext();
 
             } catch (error) {
                 showStatus("Error initializing Workspace API. Is the extension running inside Trimble Connect?", 'error');
                 console.error("Workspace API Initialization failed:", error);
                 targetIfcNameEl.textContent = "Error connecting to Trimble Connect.";
-                validateButton.disabled = true; // Keep button disabled
+                validateButton.disabled = true;
             }
         }
 
-        // --- Function to get Model Context ---
+        // --- Function to get Model Context from Viewer ---
         async function getModelContext() {
-            if (!connectClient) return;
+            if (!connectClient || !connectClient.viewer) {
+                 showStatus("Error: Workspace API client or viewer module not available.", 'error');
+                 console.error("connectClient or connectClient.viewer is not defined.");
+                 targetIfcNameEl.textContent = "Cannot access viewer API.";
+                 validateButton.disabled = true;
+                 return;
+            }
 
             try {
-                // *** Example: Get current context (check API docs for exact method) ***
-                // This might give project ID, folder ID, potentially file ID if viewer is open
-                const context = await connectClient.context.get(); // Replace with actual method
-                console.log("Trimble Connect Context:", context);
+                // Use client.viewer.getModels() as suggested by API docs
+                const models = await connectClient.viewer.getModels();
+                console.log("Models received from viewer.getModels():", models);
 
-                // *** Placeholder Logic: Extract File Info ***
-                // This part is highly dependent on what the 'context.get()' or other
-                // specific API calls (like viewer.getModel()?) return.
-                // You NEED to inspect the 'context' object in your browser console
-                // when running inside Trimble Connect to find the correct properties.
+                // Process the received models array
+                if (models && models.length > 0) {
+                    // Assuming the first model in the array is the primary one loaded
+                    const primaryModel = models[0];
+                    console.log("Primary Model:", primaryModel);
 
-                let modelName = "Unknown Model";
-                let fileId = null; // Or maybe a download URL?
+                    // *** CRUCIAL: Inspect 'primaryModel' object structure ***
+                    // Look for properties like 'id', 'fileId', 'versionId', 'name', 'downloadUrl' etc.
+                    // Adjust the logic below based on what properties are available.
 
-                // --- Hypothetical Example ---
-                if (context && context.file && context.file.id) { // If context directly gives file ID
-                     fileId = context.file.id;
-                     modelName = context.file.name || `File ID: ${fileId}`;
-                } else if (context && context.models && context.models.length > 0) { // If context gives a list of models
-                     // Assuming the first model is the relevant one in the viewer
-                     const model = context.models[0];
-                     fileId = model.id; // Or model.fileId? Check API docs.
-                     modelName = model.name || `Model ID: ${fileId}`;
+                    targetIfcName = primaryModel.name || "Unnamed Model"; // Get the name
+
+                    // Prioritize getting a direct download URL if available
+                    if (primaryModel.downloadUrl) { // Hypothetical property name
+                        targetIfcIdentifier = primaryModel.downloadUrl;
+                        targetIfcInfoEl.textContent = `Using Download URL`; // Don't display potentially long URL
+                        console.log(`Using Download URL: ${targetIfcIdentifier}`);
+                    }
+                    // Otherwise, try to get a File ID or Version ID
+                    else if (primaryModel.fileId) { // Hypothetical property name
+                        targetIfcIdentifier = primaryModel.fileId;
+                        targetIfcInfoEl.textContent = `Using File ID: ${targetIfcIdentifier}`;
+                        console.log(`Using File ID: ${targetIfcIdentifier}`);
+                    }
+                    else if (primaryModel.versionId) { // Another possibility
+                         targetIfcIdentifier = primaryModel.versionId;
+                         targetIfcInfoEl.textContent = `Using Version ID: ${targetIfcIdentifier}`;
+                         console.log(`Using Version ID: ${targetIfcIdentifier}`);
+                    }
+                     else if (primaryModel.id) { // Fallback to model ID if nothing else
+                         targetIfcIdentifier = primaryModel.id;
+                         targetIfcInfoEl.textContent = `Using Model ID: ${targetIfcIdentifier}`;
+                         console.log(`Using Model ID: ${targetIfcIdentifier}`);
+                    }
+                    else {
+                        targetIfcIdentifier = null; // No usable identifier found
+                        targetIfcInfoEl.textContent = "Could not find usable ID or URL for the model.";
+                        console.error("Could not find usable identifier in model object:", primaryModel);
+                    }
+
+                    // Update UI
+                    targetIfcNameEl.textContent = targetIfcName;
+                    if (targetIfcIdentifier) {
+                        validateButton.disabled = false; // Enable button
+                        showStatus("Ready to validate.", 'success');
+                    } else {
+                        validateButton.disabled = true; // Disable button
+                        showStatus("Could not identify target model identifier.", 'error');
+                    }
+
                 } else {
-                     // Try other methods if needed, e.g., viewer specific APIs
-                     // const viewerModel = await connectClient.viewer.getCurrentModel(); // Fictional method
-                }
-                // --- End Hypothetical Example ---
-
-
-                if (fileId) {
-                    targetIfcIdentifier = fileId; // Store the identifier (could be ID or URL)
-                    targetIfcNameEl.textContent = modelName;
-                    targetIfcInfoEl.textContent = `Using ID: ${targetIfcIdentifier}`; // Or "Using URL: ..."
-                    validateButton.disabled = false; // Enable button only if we found a target
-                    showStatus("Ready to validate.", 'success');
-                } else {
-                    targetIfcNameEl.textContent = "Could not identify target model.";
-                    targetIfcInfoEl.textContent = "Ensure a model is loaded in the viewer.";
-                    showStatus("Could not identify target model.", 'error');
+                    targetIfcNameEl.textContent = "No models found in the viewer.";
+                    targetIfcInfoEl.textContent = "Load an IFC model into the viewer.";
+                    showStatus("No models reported by the viewer API.", 'info');
                     validateButton.disabled = true;
+                    console.log("viewer.getModels() returned empty or null array.");
                 }
 
             } catch (error) {
-                showStatus("Error getting model context from Workspace API.", 'error');
-                console.error("Failed to get context:", error);
+                showStatus("Error getting models from Workspace API viewer.", 'error');
+                console.error("Failed to get viewer models:", error);
                 targetIfcNameEl.textContent = "Error getting model info.";
                 validateButton.disabled = true;
             }
         }
 
-
         // --- Form Submission Logic ---
-        form.addEventListener('submit', async (event) => {
+        validationForm.addEventListener('submit', async (event) => {
             event.preventDefault();
 
             const idsFile = idsFileInput.files[0];
 
-            // Check if we have the target IFC identifier and an IDS file
             if (!targetIfcIdentifier) {
-                showStatus('Error: Target IFC model not identified from Trimble Connect.', 'error');
+                showStatus('Error: Target IFC model not identified.', 'error');
                 return;
             }
             if (!idsFile) {
@@ -175,9 +199,8 @@
             resultsDiv.classList.add('hidden');
 
             const formData = new FormData();
-            // *** Send the identifier instead of the file blob ***
-            formData.append('ifcTarget', targetIfcIdentifier); // Key name changed
-            formData.append('idsFile', idsFile); // Keep IDS file upload
+            formData.append('ifcTarget', targetIfcIdentifier); // Send ID or URL
+            formData.append('idsFile', idsFile);
 
             try {
                 const response = await fetch(apiUrl, {
@@ -202,7 +225,6 @@
                 showStatus('Error: Could not connect to the validation server.', 'error');
                 resultsDiv.classList.add('hidden');
             } finally {
-                // Re-enable button only if we still have a target identified
                 validateButton.disabled = !targetIfcIdentifier;
             }
         });
