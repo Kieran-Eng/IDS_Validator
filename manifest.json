@@ -1,35 +1,30 @@
 {
   "$schema": "https://developer.trimble.com/docs/connect/workspace-api/manifest-schema.json",
   "manifestVersion": "1.0",
-  "id": "com.IfcX.ifc-ids-validator", // Unique ID for your extension
-  "version": "0.1.0", // Your extension's version
-  "name": "IFC IDS Validator", // Name displayed in Trimble Connect
-  "description": "Validates IFC models against IDS specifications.", // Optional description
+  "id": "com.yourcompany.ifc-ids-validator",
+  "version": "0.1.0",
+  "name": "IFC IDS Validator",
+  "description": "Validates IFC models against IDS specifications.",
   "developer": {
-    "name": "Kieran M", // Your developer name
-    "url": "https://your-website.com" // Optional website
+    "name": "Your Name or Company",
+    "url": "https://your-website.com"
   },
   "icons": [
     {
-      "src": "https://your-hosting.com/icon16.png", // URL to a 16x16 icon (optional)
+      "src": "https://your-hosting.com/icon16.png",
       "sizes": "16x16",
       "type": "image/png"
     },
     {
-      "src": "https://your-hosting.com/icon48.png", // URL to a 48x48 icon (optional)
+      "src": "https://your-hosting.com/icon48.png",
       "sizes": "48x48",
       "type": "image/png"
     }
-    // Add more icon sizes if desired
   ],
-  "permissions": [
-    // Add specific Workspace API permissions here if needed later
-    // e.g., "context:read", "selection:read"
-    // Start with none if unsure
-  ],
+  "permissions": [],
   "host": {
-    "url": "https://kieran-eng.github.io/IDS_Validator/Frontend.html", // *** CRUCIAL: URL to your HOSTED frontend HTML file ***
-    "type": "iframe", // Standard type for web extensions
-    "location": "viewerSidebarPanel" // Specifies where it appears - viewer sidebar
+    "url": "https://kieran-eng.github.io/IDS_Validator/Frontend.html",
+    "type": "iframe",
+    "location": "viewerSidebarPanel"
   }
 }
