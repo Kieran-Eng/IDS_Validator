@@ -22,12 +22,12 @@
     }
   ],
   "permissions": [
-    "context:read",  // To get info about the current project/view
-    "file:read"      // Potentially needed to get file details/URLs
-    // Add other permissions like "model:read", "selection:read" if needed later
+    "context:read",
+    "file:read",
+    "viewer:read"
   ],
   "host": {
-    "url": "https://kieran-eng.github.io/IDS_Validator/Frontend.html", // Replace with your actual hosted frontend URL
+    "url": "https://kieran-eng.github.io/IDS_Validator/Frontend.html",
     "type": "iframe",
     "location": "viewerSidebarPanel"
   }
