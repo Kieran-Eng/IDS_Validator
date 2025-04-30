@@ -97,13 +97,20 @@
                      getModelContext()
                 ]);
 
+                // Check if both IDs were successfully retrieved AFTER awaiting promises
                 if (targetProjectId && targetIfcIdentifier) {
                      validateButton.disabled = false;
                      showStatus("Ready to validate.", 'success');
                 } else {
                      validateButton.disabled = true;
-                     if (!targetProjectId) showStatus("Could not identify project context.", 'error');
-                     else if (!targetIfcIdentifier) showStatus("Could not identify target model identifier.", 'error');
+                     // Update status based on which ID is missing
+                     if (!targetProjectId && !targetIfcIdentifier){
+                        showStatus("Could not identify project context or target model.", 'error');
+                     } else if (!targetProjectId) {
+                        showStatus("Could not identify project context.", 'error');
+                     } else { // Only targetIfcIdentifier must be missing
+                        showStatus("Could not identify target model identifier.", 'error');
+                     }
                 }
 
             } catch (error) {
@@ -120,6 +127,7 @@
              if (!connectClient || !connectClient.context) {
                  console.error("connectClient or connectClient.context is not defined.");
                  targetProjectInfoEl.textContent = "Cannot access context API.";
+                 targetProjectId = null; // Ensure it's null on error
                  return;
              }
              try {
@@ -141,6 +149,7 @@
              } catch(error) {
                  console.error("Failed to get project context:", error);
                  targetProjectInfoEl.textContent = "Error getting project info.";
+                 targetProjectId = null; // Ensure it's null on error
              }
         }
 
@@ -151,6 +160,7 @@
              if (!connectClient || !connectClient.viewer) {
                  console.error("connectClient or connectClient.viewer is not defined.");
                  targetIfcNameEl.textContent = "Cannot access viewer API.";
+                 targetIfcIdentifier = null; // Ensure it's null on error
                  return;
             }
             try {
@@ -160,6 +170,7 @@
                     const primaryModel = models[0];
                     console.log("Primary Model:", primaryModel);
                     targetIfcName = primaryModel.name || "Unnamed Model";
+                    // Prioritize downloadUrl, then fileId, versionId, id
                     if (primaryModel.downloadUrl) {
                         targetIfcIdentifier = primaryModel.downloadUrl;
                         targetIfcInfoEl.textContent = `Using Download URL`;
@@ -206,13 +217,14 @@
              event.preventDefault();
             const idsFile = idsFileInput.files[0];
 
-            // *** ADDED DEBUGGING LOGS ***
-            console.log("--- Preparing to submit validation ---");
-            console.log("Value of targetProjectId:", targetProjectId);
-            console.log("Value of targetIfcIdentifier:", targetIfcIdentifier);
-            console.log("Value of idsFile:", idsFile ? idsFile.name : 'No file selected');
+            // *** MOVED DEBUGGING LOGS TO THE TOP ***
+            console.log("--- Submit Handler Started ---");
+            console.log("Value of targetProjectId at submit:", targetProjectId);
+            console.log("Value of targetIfcIdentifier at submit:", targetIfcIdentifier);
+            console.log("Value of idsFile at submit:", idsFile ? idsFile.name : 'No file selected');
             // *** END DEBUGGING LOGS ***
 
+            // Now perform checks
             if (!targetProjectId) {
                  showStatus('Error: Target Project ID not identified before submit.', 'error');
                  console.error("Submit blocked: targetProjectId is null or empty.");
@@ -229,6 +241,7 @@
                 return;
             }
 
+            // If checks pass, continue...
             validateButton.disabled = true;
             showStatus('Processing... Sending data to validation server.', 'processing');
             resultsDiv.classList.add('hidden');
@@ -238,13 +251,10 @@
             formData.append('ifcIdentifier', targetIfcIdentifier);
             formData.append('idsFile', idsFile);
 
-             // *** Log the FormData just before sending (for advanced debugging) ***
-             // Note: Logging FormData directly isn't straightforward, this shows keys
              console.log("FormData keys being sent:");
              for (let key of formData.keys()) {
                 console.log(`  - ${key}`);
              }
-             // You might need to check the Network tab payload for actual values
 
             try {
                 const response = await fetch(apiUrl, {
@@ -272,7 +282,6 @@
 
         // --- Helper Functions (showStatus, displayResults - unchanged) ---
         function showStatus(message, type = 'processing') {
-            // ... (showStatus function remains the same) ...
             statusDiv.textContent = message;
             statusDiv.className = '';
             statusDiv.classList.add('mt-4', 'p-3', 'rounded-md');
@@ -280,7 +289,6 @@
             statusDiv.classList.remove('hidden');
         }
         function displayResults(data) {
-             // ... (displayResults function remains the same) ...
              resultsContent.textContent = JSON.stringify(data, null, 2);
             resultsDiv.classList.remove('hidden');
         }
