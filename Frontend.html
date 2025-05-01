@@ -68,10 +68,10 @@
         let targetFileId = null; // Variable to store the File ID
         let targetIfcName = "Unknown Model";
         let targetProjectId = null;
-        let userAccessToken = null; // To store user token if needed
 
         // --- Workspace API Initialization ---
         async function initializeConnectAPI() {
+            // ... (Initialization logic remains the same) ...
             targetIfcNameEl.textContent = "Initializing connection...";
             console.log("Attempting to initialize Workspace API...");
 
@@ -87,28 +87,21 @@
 
                 connectClient = await TrimbleConnectWorkspace.connect(window.parent, (event, data) => {
                     console.log('Received event from Trimble Connect:', event, data);
-                    // Listen for token updates if we implement token passing later
-                    // if (event === 'extension.accessToken') { userAccessToken = data; }
                 });
 
                 console.log("Workspace API Client Initialized. connectClient object:", connectClient);
                 showStatus("Workspace API connected. Getting context and models...", 'info');
 
-                // Get project and model info concurrently
                 await Promise.all([
                      getProjectContext(),
                      getModelContext()
-                     // Optionally request token permission here if needed later
-                     // requestTokenPermission()
                 ]);
 
-                // Final check and button enablement
                 if (targetProjectId && targetFileId) {
                      validateButton.disabled = false;
                      showStatus("Ready to validate.", 'success');
                 } else {
                      validateButton.disabled = true;
-                     // ... (error status updates) ...
                      if (!targetProjectId && !targetFileId){
                         showStatus("Could not identify project context or target model file ID.", 'error');
                      } else if (!targetProjectId) {
@@ -167,26 +160,7 @@
              } catch (error) { showStatus("Error getting models.", 'error'); console.error("Failed to get viewer models:", error); targetIfcNameEl.textContent = "Error getting model info."; targetFileId = null; }
         }
 
-         // --- Function to request user access token (if needed later) ---
-         /*
-         async function requestTokenPermission() {
-             if (!connectClient || !connectClient.extension) return;
-             try {
-                 console.log("Requesting accesstoken permission...");
-                 const tokenStatus = await connectClient.extension.requestPermission("accesstoken");
-                 console.log("Access token status/token:", tokenStatus);
-                 // If status is 'pending', wait for 'extension.accessToken' event
-                 // If status is token string, store it in userAccessToken
-                 if (typeof tokenStatus === 'string' && tokenStatus !== 'pending' && tokenStatus !== 'denied') {
-                     userAccessToken = tokenStatus;
-                 }
-             } catch (error) {
-                 console.error("Error requesting token permission:", error);
-             }
-         }
-         */
-
-        // --- Form Submission Logic (Revised) ---
+        // --- Form Submission Logic (Reverted to Approach 1) ---
         validationForm.addEventListener('submit', async (event) => {
              event.preventDefault();
             const idsFile = idsFileInput.files[0];
@@ -204,109 +178,41 @@
             }
 
             validateButton.disabled = true;
-            showStatus('Processing... Attempting to get download URL...', 'processing');
+            showStatus('Processing... Sending IDs to backend server.', 'processing'); // Updated status
             resultsDiv.classList.add('hidden');
 
-            let downloadUrl = null;
+            const formData = new FormData();
+            formData.append('projectId', targetProjectId);
+            formData.append('ifcFileId', targetFileId); // Send fileId (key name matches backend expectation)
+            formData.append('idsFile', idsFile);
 
-            // --- APPROACH 2: Try getting download URL from Frontend ---
-            // This requires the Core API endpoint and potentially the user's token
-            // NOTE: This direct fetch from frontend might be blocked by CORS or fail
-            // if the Workspace API doesn't implicitly handle auth for Core API calls.
-            try {
-                 // We need the user's token for this call if Workspace API doesn't proxy it
-                 // Let's assume for now we need to request it (uncomment requestTokenPermission if needed)
-                 // await requestTokenPermission(); // Make sure userAccessToken is populated
+             console.log("FormData keys being sent:");
+             for (let key of formData.keys()) { console.log(`  - ${key}`); }
 
-                 // if (!userAccessToken) {
-                 //    throw new Error("User access token not available.");
-                 // }
-
-                 // Construct Core API URL (adjust region if needed)
-                 // We need the base URL - this might need configuration or discovery
-                 const coreApiBase = "https://app21.connect.trimble.com"; // Assuming EU region based on previous errors
-                 const getUrlEndpoint = `${coreApiBase}/tc/api/2.0/files/fs/${targetFileId}/downloadurl`;
-
-                 console.log(`Frontend attempting to fetch download URL from: ${getUrlEndpoint}`);
-
-                 // Make the fetch request using the *user's* token if available,
-                 // otherwise try without (relying on browser session/cookies - might fail)
-                 const headers = {};
-                 // if (userAccessToken) {
-                 //     headers['Authorization'] = `Bearer ${userAccessToken}`;
-                 // } else {
-                 //     console.warn("Attempting fetch without explicit user token...");
-                 // }
-
-                 // **THIS FETCH MIGHT FAIL DUE TO CORS OR AUTH ISSUES**
-                 const urlResponse = await fetch(getUrlEndpoint, {
-                     method: 'GET',
-                     headers: headers // Send user token if available and needed
-                     // credentials: 'include' // Might be needed if relying on browser cookies
-                 });
-
-                 if (!urlResponse.ok) {
-                     const errorData = await urlResponse.text(); // Get error text
-                     throw new Error(`Failed to get download URL from frontend: ${urlResponse.status} ${urlResponse.statusText} - ${errorData}`);
-                 }
-
-                 const urlData = await urlResponse.json();
-                 if (urlData && urlData.url) {
-                     downloadUrl = urlData.url;
-                     console.log("Frontend successfully obtained download URL:", downloadUrl.substring(0, 100) + "...");
-                 } else {
-                     throw new Error("Download URL not found in API response.");
-                 }
-
-            } catch (error) {
-                 console.error("Frontend failed to get download URL:", error);
-                 showStatus(`Error: Could not get download URL from frontend. ${error.message}. Falling back to backend request.`, 'error');
-                 // If frontend fails, we might fall back to sending IDs to backend (Approach 1)
-                 // For now, we'll just stop here.
-                 validateButton.disabled = false; // Re-enable button
-                 return; // Stop processing
-            }
-            // --- END OF APPROACH 2 ---
-
+            // *** REMOVED the direct fetch attempt for download URL ***
 
             // --- Send data to Backend ---
-            // If we successfully got the downloadUrl, send that instead of IDs
-            if (downloadUrl) {
-                showStatus('Download URL obtained. Sending to backend for validation...', 'processing');
-                const formData = new FormData();
-                formData.append('ifcDownloadUrl', downloadUrl); // Send the URL
-                formData.append('idsFile', idsFile);
-
-                console.log("FormData keys being sent (URL approach):");
-                for (let key of formData.keys()) { console.log(`  - ${key}`); }
-
-                try {
-                    const response = await fetch(apiUrl, { // apiUrl is your PythonAnywhere backend
-                        method: 'POST',
-                        body: formData,
-                    });
-                    const resultData = await response.json();
-                    if (response.ok) {
-                        showStatus(`Validation complete: ${resultData.message || 'Status received.'}`, 'success');
-                        displayResults(resultData);
-                    } else {
-                        const errorMessage = resultData.error || `Server responded with status ${response.status}`;
-                        console.error('Backend API Error:', resultData);
-                        showStatus(`Error from backend: ${errorMessage}`, 'error');
-                        resultsDiv.classList.add('hidden');
-                    }
-                } catch (error) {
-                    console.error('Network or Fetch Error to Backend:', error);
-                    showStatus('Error: Could not connect to the validation server.', 'error');
+            try {
+                const response = await fetch(apiUrl, { // apiUrl is your PythonAnywhere backend
+                    method: 'POST',
+                    body: formData,
+                });
+                const resultData = await response.json();
+                if (response.ok) {
+                    showStatus(`Validation complete: ${resultData.message || 'Status received.'}`, 'success');
+                    displayResults(resultData);
+                } else {
+                    const errorMessage = resultData.error || `Server responded with status ${response.status}`;
+                    console.error('Backend API Error:', resultData);
+                    showStatus(`Error from backend: ${errorMessage}`, 'error');
                     resultsDiv.classList.add('hidden');
-                } finally {
-                    validateButton.disabled = !(targetProjectId && targetFileId); // Re-enable based on initial IDs
                 }
-            } else {
-                 // This part should ideally not be reached if the download URL fetch succeeded
-                 // or failed gracefully above.
-                 showStatus('Error: Could not obtain download URL to send to backend.', 'error');
-                 validateButton.disabled = !(targetProjectId && targetFileId);
+            } catch (error) {
+                console.error('Network or Fetch Error to Backend:', error);
+                showStatus('Error: Could not connect to the validation server.', 'error');
+                resultsDiv.classList.add('hidden');
+            } finally {
+                validateButton.disabled = !(targetProjectId && targetFileId);
             }
         });
 
