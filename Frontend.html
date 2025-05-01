@@ -68,6 +68,7 @@
         let targetFileId = null; // Variable to store the File ID
         let targetIfcName = "Unknown Model";
         let targetProjectId = null;
+        let userAccessToken = null; // To store user token if needed
 
         // --- Workspace API Initialization ---
         async function initializeConnectAPI() {
@@ -86,22 +87,28 @@
 
                 connectClient = await TrimbleConnectWorkspace.connect(window.parent, (event, data) => {
                     console.log('Received event from Trimble Connect:', event, data);
+                    // Listen for token updates if we implement token passing later
+                    // if (event === 'extension.accessToken') { userAccessToken = data; }
                 });
 
                 console.log("Workspace API Client Initialized. connectClient object:", connectClient);
                 showStatus("Workspace API connected. Getting context and models...", 'info');
 
+                // Get project and model info concurrently
                 await Promise.all([
                      getProjectContext(),
                      getModelContext()
+                     // Optionally request token permission here if needed later
+                     // requestTokenPermission()
                 ]);
 
                 // Final check and button enablement
-                if (targetProjectId && targetFileId) { // Check targetFileId
+                if (targetProjectId && targetFileId) {
                      validateButton.disabled = false;
                      showStatus("Ready to validate.", 'success');
                 } else {
                      validateButton.disabled = true;
+                     // ... (error status updates) ...
                      if (!targetProjectId && !targetFileId){
                         showStatus("Could not identify project context or target model file ID.", 'error');
                      } else if (!targetProjectId) {
@@ -121,154 +128,185 @@
 
         // --- Function to get Project Context ---
         async function getProjectContext() {
+            // ... (getProjectContext logic remains the same - gets targetProjectId) ...
              targetProjectId = null;
              targetProjectInfoEl.textContent = "Fetching project info...";
-
-             if (!connectClient) {
-                  console.error("getProjectContext called but connectClient is null.");
-                  targetProjectInfoEl.textContent = "API Client not ready.";
-                  return;
-             }
+             if (!connectClient) { console.error("getProjectContext: connectClient null"); targetProjectInfoEl.textContent = "API Client not ready."; return; }
              try {
                  let context = null;
                  if (connectClient.context && typeof connectClient.context.get === 'function') {
-                     console.log("Attempting context via connectClient.context.get()");
-                     context = await connectClient.context.get();
-                     console.log("Context from context.get():", context);
+                     context = await connectClient.context.get(); console.log("Context from context.get():", context);
                  } else if (connectClient.project && typeof connectClient.project.getCurrentProject === 'function') {
-                     console.log("Trying connectClient.project.getCurrentProject()");
-                     const projectInfo = await connectClient.project.getCurrentProject();
-                     console.log("Info from project.getCurrentProject():", projectInfo);
-                     context = projectInfo;
-                 } else {
-                      console.error("No method found to get project context.");
-                      targetProjectInfoEl.textContent = "Cannot access context/project API.";
-                      return;
-                  }
-
-                 // Extract project ID
+                     const projectInfo = await connectClient.project.getCurrentProject(); console.log("Info from project.getCurrentProject():", projectInfo); context = projectInfo;
+                 } else { console.error("No method found for project context."); targetProjectInfoEl.textContent = "Cannot access context/project API."; return; }
                  if (context && context.projectId) { targetProjectId = context.projectId; }
                  else if (context && context.project && context.project.id) { targetProjectId = context.project.id; }
                  else if (context && context.id) { targetProjectId = context.id; }
-
-                 // Update UI
-                 if (targetProjectId) {
-                     targetProjectInfoEl.textContent = `Project ID: ${targetProjectId}`;
-                     console.log(`Using Project ID: ${targetProjectId}`);
-                 } else {
-                     targetProjectInfoEl.textContent = "Could not find Project ID.";
-                     console.error("Could not find Project ID in received object:", context);
-                 }
-             } catch(error) {
-                 console.error("Failed to get project context:", error);
-                 targetProjectInfoEl.textContent = "Error getting project info.";
-                 targetProjectId = null;
-             }
+                 if (targetProjectId) { targetProjectInfoEl.textContent = `Project ID: ${targetProjectId}`; console.log(`Using Project ID: ${targetProjectId}`); }
+                 else { targetProjectInfoEl.textContent = "Could not find Project ID."; console.error("Could not find Project ID in context:", context); }
+             } catch(error) { console.error("Failed to get project context:", error); targetProjectInfoEl.textContent = "Error getting project info."; targetProjectId = null; }
         }
 
         // --- Function to get Model Context from Viewer ---
         async function getModelContext() {
-             targetFileId = null; // Reset before trying
+            // ... (getModelContext logic remains the same - gets targetFileId from model.id) ...
+             targetFileId = null;
              targetIfcInfoEl.textContent = "Fetching model info...";
-
-             if (!connectClient || !connectClient.viewer) {
-                 console.error("connectClient or connectClient.viewer is not defined.");
-                 targetIfcNameEl.textContent = "Cannot access viewer API.";
-                 return;
-            }
-            try {
-                const models = await connectClient.viewer.getModels();
-                console.log("Models received from viewer.getModels():", models);
+             if (!connectClient || !connectClient.viewer) { console.error("getModelContext: connectClient.viewer null"); targetIfcNameEl.textContent = "Cannot access viewer API."; return; }
+             try {
+                const models = await connectClient.viewer.getModels(); console.log("Models from viewer.getModels():", models);
                 if (models && models.length > 0) {
-                    const primaryModel = models[0];
-                    console.log("Primary Model:", primaryModel);
+                    const primaryModel = models[0]; console.log("Primary Model:", primaryModel);
                     targetIfcName = primaryModel.name || "Unnamed Model";
-
-                    // *** UPDATED LOGIC: Use primaryModel.id as the File ID ***
-                    if (primaryModel.id) { // Check if the model object itself has an id
-                        targetFileId = primaryModel.id; // Assume this is the File ID needed by Core API
-                        targetIfcInfoEl.textContent = `Using File ID: ${targetFileId}`; // Update UI text
-                        console.log(`Using File ID (from model.id): ${targetFileId}`);
-                    }
-                    else {
-                        targetIfcInfoEl.textContent = "Could not find File ID (model.id) for the model.";
-                        console.error("Could not find 'id' property in model object:", primaryModel);
-                    }
+                    if (primaryModel.id) { // Use model.id as the File ID
+                        targetFileId = primaryModel.id;
+                        targetIfcInfoEl.textContent = `Using File ID: ${targetFileId}`; console.log(`Using File ID (from model.id): ${targetFileId}`);
+                    } else { targetIfcInfoEl.textContent = "Could not find File ID (model.id)."; console.error("No 'id' in model:", primaryModel); }
                     targetIfcNameEl.textContent = targetIfcName;
-
-                } else {
-                    targetIfcNameEl.textContent = "No models found in the viewer.";
-                    targetIfcInfoEl.textContent = "Load an IFC model into the viewer.";
-                    console.log("viewer.getModels() returned empty or null array.");
-                }
-            } catch (error) {
-                showStatus("Error getting models from Workspace API viewer.", 'error');
-                console.error("Failed to get viewer models:", error);
-                targetIfcNameEl.textContent = "Error getting model info.";
-                 targetFileId = null; // Ensure null on error
-            }
+                } else { targetIfcNameEl.textContent = "No models found."; targetIfcInfoEl.textContent = "Load IFC model."; console.log("viewer.getModels() empty."); }
+             } catch (error) { showStatus("Error getting models.", 'error'); console.error("Failed to get viewer models:", error); targetIfcNameEl.textContent = "Error getting model info."; targetFileId = null; }
         }
 
-        // --- Form Submission Logic ---
+         // --- Function to request user access token (if needed later) ---
+         /*
+         async function requestTokenPermission() {
+             if (!connectClient || !connectClient.extension) return;
+             try {
+                 console.log("Requesting accesstoken permission...");
+                 const tokenStatus = await connectClient.extension.requestPermission("accesstoken");
+                 console.log("Access token status/token:", tokenStatus);
+                 // If status is 'pending', wait for 'extension.accessToken' event
+                 // If status is token string, store it in userAccessToken
+                 if (typeof tokenStatus === 'string' && tokenStatus !== 'pending' && tokenStatus !== 'denied') {
+                     userAccessToken = tokenStatus;
+                 }
+             } catch (error) {
+                 console.error("Error requesting token permission:", error);
+             }
+         }
+         */
+
+        // --- Form Submission Logic (Revised) ---
         validationForm.addEventListener('submit', async (event) => {
              event.preventDefault();
             const idsFile = idsFileInput.files[0];
 
             console.log("--- Submit Handler Started ---");
             console.log("Value of targetProjectId at submit:", targetProjectId);
-            console.log("Value of targetFileId at submit:", targetFileId); // Log targetFileId
+            console.log("Value of targetFileId at submit:", targetFileId);
             console.log("Value of idsFile at submit:", idsFile ? idsFile.name : 'No file selected');
 
-            if (!targetProjectId) {
-                 showStatus('Error: Target Project ID not identified.', 'error');
-                 console.error("Submit blocked: targetProjectId is null.");
+            // Perform checks
+            if (!targetProjectId || !targetFileId || !idsFile) {
+                 showStatus('Error: Missing Project ID, File ID, or IDS File.', 'error');
+                 console.error("Submit blocked: Missing required data.");
                  return;
-            }
-            if (!targetFileId) { // Check targetFileId
-                showStatus('Error: Target IFC File ID not identified.', 'error');
-                console.error("Submit blocked: targetFileId is null.");
-                return;
-            }
-            if (!idsFile) {
-                showStatus('Please select an IDS file.', 'error');
-                 console.error("Submit blocked: idsFile is missing.");
-                return;
             }
 
             validateButton.disabled = true;
-            showStatus('Processing... Sending data to validation server.', 'processing');
+            showStatus('Processing... Attempting to get download URL...', 'processing');
             resultsDiv.classList.add('hidden');
 
-            const formData = new FormData();
-            formData.append('projectId', targetProjectId);
-            formData.append('ifcFileId', targetFileId); // Send the correct fileId
-            formData.append('idsFile', idsFile);
+            let downloadUrl = null;
 
-             console.log("FormData keys being sent:");
-             for (let key of formData.keys()) { console.log(`  - ${key}`); }
-
+            // --- APPROACH 2: Try getting download URL from Frontend ---
+            // This requires the Core API endpoint and potentially the user's token
+            // NOTE: This direct fetch from frontend might be blocked by CORS or fail
+            // if the Workspace API doesn't implicitly handle auth for Core API calls.
             try {
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    body: formData,
-                });
-                const resultData = await response.json();
-                if (response.ok) {
-                    showStatus(`Validation complete: ${resultData.message || 'Status received.'}`, 'success');
-                    displayResults(resultData);
-                } else {
-                    const errorMessage = resultData.error || `Server responded with status ${response.status}`;
-                    console.error('API Error:', resultData);
-                    showStatus(`Error: ${errorMessage}`, 'error');
-                    resultsDiv.classList.add('hidden');
-                }
+                 // We need the user's token for this call if Workspace API doesn't proxy it
+                 // Let's assume for now we need to request it (uncomment requestTokenPermission if needed)
+                 // await requestTokenPermission(); // Make sure userAccessToken is populated
+
+                 // if (!userAccessToken) {
+                 //    throw new Error("User access token not available.");
+                 // }
+
+                 // Construct Core API URL (adjust region if needed)
+                 // We need the base URL - this might need configuration or discovery
+                 const coreApiBase = "https://app21.connect.trimble.com"; // Assuming EU region based on previous errors
+                 const getUrlEndpoint = `${coreApiBase}/tc/api/2.0/files/fs/${targetFileId}/downloadurl`;
+
+                 console.log(`Frontend attempting to fetch download URL from: ${getUrlEndpoint}`);
+
+                 // Make the fetch request using the *user's* token if available,
+                 // otherwise try without (relying on browser session/cookies - might fail)
+                 const headers = {};
+                 // if (userAccessToken) {
+                 //     headers['Authorization'] = `Bearer ${userAccessToken}`;
+                 // } else {
+                 //     console.warn("Attempting fetch without explicit user token...");
+                 // }
+
+                 // **THIS FETCH MIGHT FAIL DUE TO CORS OR AUTH ISSUES**
+                 const urlResponse = await fetch(getUrlEndpoint, {
+                     method: 'GET',
+                     headers: headers // Send user token if available and needed
+                     // credentials: 'include' // Might be needed if relying on browser cookies
+                 });
+
+                 if (!urlResponse.ok) {
+                     const errorData = await urlResponse.text(); // Get error text
+                     throw new Error(`Failed to get download URL from frontend: ${urlResponse.status} ${urlResponse.statusText} - ${errorData}`);
+                 }
+
+                 const urlData = await urlResponse.json();
+                 if (urlData && urlData.url) {
+                     downloadUrl = urlData.url;
+                     console.log("Frontend successfully obtained download URL:", downloadUrl.substring(0, 100) + "...");
+                 } else {
+                     throw new Error("Download URL not found in API response.");
+                 }
+
             } catch (error) {
-                console.error('Network or Fetch Error:', error);
-                showStatus('Error: Could not connect to the validation server.', 'error');
-                resultsDiv.classList.add('hidden');
-            } finally {
-                // Re-enable button only if we still have identifiers
-                validateButton.disabled = !(targetProjectId && targetFileId);
+                 console.error("Frontend failed to get download URL:", error);
+                 showStatus(`Error: Could not get download URL from frontend. ${error.message}. Falling back to backend request.`, 'error');
+                 // If frontend fails, we might fall back to sending IDs to backend (Approach 1)
+                 // For now, we'll just stop here.
+                 validateButton.disabled = false; // Re-enable button
+                 return; // Stop processing
+            }
+            // --- END OF APPROACH 2 ---
+
+
+            // --- Send data to Backend ---
+            // If we successfully got the downloadUrl, send that instead of IDs
+            if (downloadUrl) {
+                showStatus('Download URL obtained. Sending to backend for validation...', 'processing');
+                const formData = new FormData();
+                formData.append('ifcDownloadUrl', downloadUrl); // Send the URL
+                formData.append('idsFile', idsFile);
+
+                console.log("FormData keys being sent (URL approach):");
+                for (let key of formData.keys()) { console.log(`  - ${key}`); }
+
+                try {
+                    const response = await fetch(apiUrl, { // apiUrl is your PythonAnywhere backend
+                        method: 'POST',
+                        body: formData,
+                    });
+                    const resultData = await response.json();
+                    if (response.ok) {
+                        showStatus(`Validation complete: ${resultData.message || 'Status received.'}`, 'success');
+                        displayResults(resultData);
+                    } else {
+                        const errorMessage = resultData.error || `Server responded with status ${response.status}`;
+                        console.error('Backend API Error:', resultData);
+                        showStatus(`Error from backend: ${errorMessage}`, 'error');
+                        resultsDiv.classList.add('hidden');
+                    }
+                } catch (error) {
+                    console.error('Network or Fetch Error to Backend:', error);
+                    showStatus('Error: Could not connect to the validation server.', 'error');
+                    resultsDiv.classList.add('hidden');
+                } finally {
+                    validateButton.disabled = !(targetProjectId && targetFileId); // Re-enable based on initial IDs
+                }
+            } else {
+                 // This part should ideally not be reached if the download URL fetch succeeded
+                 // or failed gracefully above.
+                 showStatus('Error: Could not obtain download URL to send to backend.', 'error');
+                 validateButton.disabled = !(targetProjectId && targetFileId);
             }
         });
 
@@ -292,15 +330,3 @@
 
 </body>
 </html>
-```
-
-**Instructions:**
-
-1.  **Deploy** this updated frontend code.
-2.  **Reload** Trimble Connect and your extension.
-3.  Open the **Console** in your browser's Developer Tools (F12).
-4.  Check the logs during initialization. Does it now log `Using File ID (from model.id): YOUR_FILE_ID`?
-5.  Select an IDS file and click "Validate Model".
-6.  Check the **backend logs** on PythonAnywhere. Does the request to `/files/fs/{fileId}/downloadurl` succeed now, or do you still get the `403 Forbidden` error (or a different error like `404 Not Found`)?
-
-Hopefully, sending the correct File ID (`primaryModel.id`) will resolve the `403 Forbidden` err
