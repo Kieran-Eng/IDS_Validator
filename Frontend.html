@@ -65,7 +65,7 @@
         const apiUrl = 'https://KMulvey.pythonanywhere.com/validate'; // Or http://localhost:8080 for local testing
 
         let connectClient = null;
-        let targetIdentifier = null; // Generic name for the identifier (could be fileId or modelId)
+        let targetFileId = null; // Variable to store the File ID
         let targetIfcName = "Unknown Model";
         let targetProjectId = null;
 
@@ -91,24 +91,23 @@
                 console.log("Workspace API Client Initialized. connectClient object:", connectClient);
                 showStatus("Workspace API connected. Getting context and models...", 'info');
 
-                // Get project and model info concurrently
                 await Promise.all([
                      getProjectContext(),
                      getModelContext()
                 ]);
 
                 // Final check and button enablement
-                if (targetProjectId && targetIdentifier) { // Check for targetIdentifier now
+                if (targetProjectId && targetFileId) { // Check targetFileId
                      validateButton.disabled = false;
                      showStatus("Ready to validate.", 'success');
                 } else {
                      validateButton.disabled = true;
-                     if (!targetProjectId && !targetIdentifier){
-                        showStatus("Could not identify project context or target model identifier.", 'error');
+                     if (!targetProjectId && !targetFileId){
+                        showStatus("Could not identify project context or target model file ID.", 'error');
                      } else if (!targetProjectId) {
                         showStatus("Could not identify project context.", 'error');
-                     } else { // Only targetIdentifier must be missing
-                        showStatus("Could not identify target model identifier.", 'error');
+                     } else {
+                        showStatus("Could not identify target model file ID.", 'error');
                      }
                 }
 
@@ -169,7 +168,7 @@
 
         // --- Function to get Model Context from Viewer ---
         async function getModelContext() {
-             targetIdentifier = null; // Reset before trying
+             targetFileId = null; // Reset before trying
              targetIfcInfoEl.textContent = "Fetching model info...";
 
              if (!connectClient || !connectClient.viewer) {
@@ -185,23 +184,15 @@
                     console.log("Primary Model:", primaryModel);
                     targetIfcName = primaryModel.name || "Unnamed Model";
 
-                    // *** UPDATED LOGIC: Prioritize fileId, then id ***
-                    if (primaryModel.fileId) {
-                        targetIdentifier = primaryModel.fileId;
-                        targetIfcInfoEl.textContent = `Using File ID: ${targetIdentifier}`;
-                        console.log(`Using File ID: ${targetIdentifier}`);
+                    // *** UPDATED LOGIC: Use primaryModel.id as the File ID ***
+                    if (primaryModel.id) { // Check if the model object itself has an id
+                        targetFileId = primaryModel.id; // Assume this is the File ID needed by Core API
+                        targetIfcInfoEl.textContent = `Using File ID: ${targetFileId}`; // Update UI text
+                        console.log(`Using File ID (from model.id): ${targetFileId}`);
                     }
-                    else if (primaryModel.id) { // Fallback to model id if fileId is missing
-                        targetIdentifier = primaryModel.id;
-                        targetIfcInfoEl.textContent = `Using Model ID: ${targetIdentifier}`; // Indicate it's the model ID
-                        console.log(`Using Model ID (fileId not found): ${targetIdentifier}`);
-                    }
-                    // Log other potential IDs if fileId is missing, but don't store them for backend use yet
                     else {
-                        targetIfcInfoEl.textContent = "Could not find fileId or modelId for the model.";
-                        if (primaryModel.versionId) console.log(`Found Version ID: ${primaryModel.versionId}`);
-                        if (primaryModel.downloadUrl) console.log(`Found Download URL: ${primaryModel.downloadUrl}`);
-                        console.error("Could not find usable identifier (fileId or id) in model object:", primaryModel);
+                        targetIfcInfoEl.textContent = "Could not find File ID (model.id) for the model.";
+                        console.error("Could not find 'id' property in model object:", primaryModel);
                     }
                     targetIfcNameEl.textContent = targetIfcName;
 
@@ -214,7 +205,7 @@
                 showStatus("Error getting models from Workspace API viewer.", 'error');
                 console.error("Failed to get viewer models:", error);
                 targetIfcNameEl.textContent = "Error getting model info.";
-                 targetIdentifier = null; // Ensure null on error
+                 targetFileId = null; // Ensure null on error
             }
         }
 
@@ -225,7 +216,7 @@
 
             console.log("--- Submit Handler Started ---");
             console.log("Value of targetProjectId at submit:", targetProjectId);
-            console.log("Value of targetIdentifier at submit:", targetIdentifier); // Use generic name
+            console.log("Value of targetFileId at submit:", targetFileId); // Log targetFileId
             console.log("Value of idsFile at submit:", idsFile ? idsFile.name : 'No file selected');
 
             if (!targetProjectId) {
@@ -233,9 +224,9 @@
                  console.error("Submit blocked: targetProjectId is null.");
                  return;
             }
-            if (!targetIdentifier) { // Check generic identifier
-                showStatus('Error: Target IFC model identifier not identified.', 'error');
-                console.error("Submit blocked: targetIdentifier is null.");
+            if (!targetFileId) { // Check targetFileId
+                showStatus('Error: Target IFC File ID not identified.', 'error');
+                console.error("Submit blocked: targetFileId is null.");
                 return;
             }
             if (!idsFile) {
@@ -250,7 +241,7 @@
 
             const formData = new FormData();
             formData.append('projectId', targetProjectId);
-            formData.append('ifcIdentifier', targetIdentifier); // Send the found identifier (fileId or modelId)
+            formData.append('ifcFileId', targetFileId); // Send the correct fileId
             formData.append('idsFile', idsFile);
 
              console.log("FormData keys being sent:");
@@ -277,7 +268,7 @@
                 resultsDiv.classList.add('hidden');
             } finally {
                 // Re-enable button only if we still have identifiers
-                validateButton.disabled = !(targetProjectId && targetIdentifier);
+                validateButton.disabled = !(targetProjectId && targetFileId);
             }
         });
 
@@ -308,7 +299,8 @@
 1.  **Deploy** this updated frontend code.
 2.  **Reload** Trimble Connect and your extension.
 3.  Open the **Console** in your browser's Developer Tools (F12).
-4.  Check the logs again. It should now log `Using Model ID (fileId not found): YOUR_MODEL_ID` and update the UI accordingly. The "Validate Model" button should become enabled.
-5.  Try clicking "Validate Model". The backend will likely still fail because it's expecting a `fileId` to construct the download URL, but at least the frontend should now be sending the `modelId` it found.
+4.  Check the logs during initialization. Does it now log `Using File ID (from model.id): YOUR_FILE_ID`?
+5.  Select an IDS file and click "Validate Model".
+6.  Check the **backend logs** on PythonAnywhere. Does the request to `/files/fs/{fileId}/downloadurl` succeed now, or do you still get the `403 Forbidden` error (or a different error like `404 Not Found`)?
 
-Let me know if the UI now correctly shows "Using Model ID: ..." and if the button enables. If so, the next step will be to adjust the backend to handle receiving a model ID instead of a file 
+Hopefully, sending the correct File ID (`primaryModel.id`) will resolve the `403 Forbidden` err
