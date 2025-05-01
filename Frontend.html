@@ -65,13 +65,13 @@
         const apiUrl = 'https://KMulvey.pythonanywhere.com/validate'; // Or http://localhost:8080 for local testing
 
         let connectClient = null;
-        let targetFileId = null; // Variable to store the File ID
+        let targetFileId = null;
         let targetIfcName = "Unknown Model";
         let targetProjectId = null;
+        let userAccessToken = null; // To store the user's access token
 
         // --- Workspace API Initialization ---
         async function initializeConnectAPI() {
-            // ... (Initialization logic remains the same) ...
             targetIfcNameEl.textContent = "Initializing connection...";
             console.log("Attempting to initialize Workspace API...");
 
@@ -87,29 +87,34 @@
 
                 connectClient = await TrimbleConnectWorkspace.connect(window.parent, (event, data) => {
                     console.log('Received event from Trimble Connect:', event, data);
+                    // Listen for the token if consent was pending or token refreshed
+                    if (event === 'extension.accessToken') {
+                        if (data && typeof data === 'string' && data !== 'denied') {
+                            console.log("Received user access token via event.");
+                            userAccessToken = data;
+                            // Potentially re-enable button if it was disabled waiting for token
+                            checkAndEnableButton();
+                        } else {
+                             console.error("Access token denied or invalid data received via event:", data);
+                             showStatus("Permission denied to access user token.", 'error');
+                             userAccessToken = null; // Ensure it's null
+                             validateButton.disabled = true; // Keep disabled
+                        }
+                    }
                 });
 
                 console.log("Workspace API Client Initialized. connectClient object:", connectClient);
-                showStatus("Workspace API connected. Getting context and models...", 'info');
+                showStatus("Workspace API connected. Getting context, models, and token permission...", 'info');
 
+                // Get project, model info, and request token permission concurrently
                 await Promise.all([
                      getProjectContext(),
-                     getModelContext()
+                     getModelContext(),
+                     requestTokenPermission() // Request token permission
                 ]);
 
-                if (targetProjectId && targetFileId) {
-                     validateButton.disabled = false;
-                     showStatus("Ready to validate.", 'success');
-                } else {
-                     validateButton.disabled = true;
-                     if (!targetProjectId && !targetFileId){
-                        showStatus("Could not identify project context or target model file ID.", 'error');
-                     } else if (!targetProjectId) {
-                        showStatus("Could not identify project context.", 'error');
-                     } else {
-                        showStatus("Could not identify target model file ID.", 'error');
-                     }
-                }
+                // Check and enable button after initial data fetch
+                checkAndEnableButton();
 
             } catch (error) {
                 showStatus("Error initializing Workspace API or getting initial data.", 'error');
@@ -121,7 +126,7 @@
 
         // --- Function to get Project Context ---
         async function getProjectContext() {
-            // ... (getProjectContext logic remains the same - gets targetProjectId) ...
+            // ... (getProjectContext logic remains the same) ...
              targetProjectId = null;
              targetProjectInfoEl.textContent = "Fetching project info...";
              if (!connectClient) { console.error("getProjectContext: connectClient null"); targetProjectInfoEl.textContent = "API Client not ready."; return; }
@@ -160,7 +165,55 @@
              } catch (error) { showStatus("Error getting models.", 'error'); console.error("Failed to get viewer models:", error); targetIfcNameEl.textContent = "Error getting model info."; targetFileId = null; }
         }
 
-        // --- Form Submission Logic (Reverted to Approach 1) ---
+         // --- Function to request user access token ---
+         async function requestTokenPermission() {
+             if (!connectClient || !connectClient.extension) {
+                 console.error("Cannot request token: connectClient or connectClient.extension not available.");
+                 showStatus("Cannot request token permission.", 'error');
+                 return;
+             }
+             try {
+                 console.log("Requesting accesstoken permission...");
+                 // This call might show a consent popup to the user
+                 const tokenStatus = await connectClient.extension.requestPermission("accesstoken");
+                 console.log("Access token request status:", tokenStatus);
+
+                 if (typeof tokenStatus === 'string' && tokenStatus !== 'pending' && tokenStatus !== 'denied') {
+                     userAccessToken = tokenStatus; // Store the token immediately if granted
+                     console.log("User access token obtained directly.");
+                 } else if (tokenStatus === 'pending') {
+                     console.log("Token permission pending user consent. Waiting for event.");
+                     // Disable button until token event is received? Or assume it might work?
+                     // For simplicity, we'll rely on the event handler to set userAccessToken
+                 } else { // denied or other error
+                      console.error("Access token permission denied by user or error.");
+                      showStatus("Permission denied to access user token.", 'error');
+                      userAccessToken = null;
+                 }
+             } catch (error) {
+                 console.error("Error requesting token permission:", error);
+                 showStatus("Error occurred while requesting token permission.", 'error');
+                 userAccessToken = null;
+             }
+         }
+
+         // --- Helper to check if button should be enabled ---
+         function checkAndEnableButton() {
+             if (targetProjectId && targetFileId && userAccessToken) {
+                 validateButton.disabled = false;
+                 showStatus("Ready to validate.", 'success');
+             } else {
+                 validateButton.disabled = true;
+                 // Provide more specific status
+                 if (!userAccessToken) {
+                     showStatus("Waiting for user token permission...", 'info');
+                 } else if (!targetProjectId || !targetFileId) {
+                     // Status already set by context/model functions
+                 }
+             }
+         }
+
+        // --- Form Submission Logic ---
         validationForm.addEventListener('submit', async (event) => {
              event.preventDefault();
             const idsFile = idsFileInput.files[0];
@@ -168,32 +221,32 @@
             console.log("--- Submit Handler Started ---");
             console.log("Value of targetProjectId at submit:", targetProjectId);
             console.log("Value of targetFileId at submit:", targetFileId);
+            console.log("Value of userAccessToken at submit:", userAccessToken ? 'Token Present' : 'Token MISSING'); // Check token
             console.log("Value of idsFile at submit:", idsFile ? idsFile.name : 'No file selected');
 
-            // Perform checks
-            if (!targetProjectId || !targetFileId || !idsFile) {
-                 showStatus('Error: Missing Project ID, File ID, or IDS File.', 'error');
-                 console.error("Submit blocked: Missing required data.");
+            // Perform checks, including userAccessToken
+            if (!targetProjectId || !targetFileId || !idsFile || !userAccessToken) {
+                 showStatus('Error: Missing Project ID, File ID, User Token, or IDS File.', 'error');
+                 console.error("Submit blocked: Missing required data (including user token).");
                  return;
             }
 
             validateButton.disabled = true;
-            showStatus('Processing... Sending IDs to backend server.', 'processing'); // Updated status
+            showStatus('Processing... Sending data to backend server.', 'processing');
             resultsDiv.classList.add('hidden');
 
             const formData = new FormData();
             formData.append('projectId', targetProjectId);
-            formData.append('ifcFileId', targetFileId); // Send fileId (key name matches backend expectation)
+            formData.append('ifcFileId', targetFileId);
             formData.append('idsFile', idsFile);
+            formData.append('userAccessToken', userAccessToken); // Send the user's token
 
              console.log("FormData keys being sent:");
              for (let key of formData.keys()) { console.log(`  - ${key}`); }
 
-            // *** REMOVED the direct fetch attempt for download URL ***
-
             // --- Send data to Backend ---
             try {
-                const response = await fetch(apiUrl, { // apiUrl is your PythonAnywhere backend
+                const response = await fetch(apiUrl, {
                     method: 'POST',
                     body: formData,
                 });
@@ -212,7 +265,8 @@
                 showStatus('Error: Could not connect to the validation server.', 'error');
                 resultsDiv.classList.add('hidden');
             } finally {
-                validateButton.disabled = !(targetProjectId && targetFileId);
+                // Re-enable button only if we still have identifiers AND token
+                validateButton.disabled = !(targetProjectId && targetFileId && userAccessToken);
             }
         });
 
