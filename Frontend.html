@@ -61,11 +61,11 @@
         const targetProjectInfoEl = document.getElementById('targetProjectInfo');
         const validationForm = document.getElementById('validationForm');
 
-        // Backend API URL
-        const apiUrl = 'https://your-username.pythonanywhere.com/validate'; // Replace with your actual backend URL
+        // Backend API URL - MAKE SURE THIS IS CORRECT FOR YOUR HOSTED BACKEND
+        const apiUrl = 'https://your-username.pythonanywhere.com/validate'; // Or http://localhost:8080 for local testing
 
         let connectClient = null;
-        let targetIfcIdentifier = null;
+        let targetFileId = null; // Specifically store the fileId
         let targetIfcName = "Unknown Model";
         let targetProjectId = null;
 
@@ -88,27 +88,27 @@
                     console.log('Received event from Trimble Connect:', event, data);
                 });
 
-                // *** Log the connectClient object to inspect its structure ***
                 console.log("Workspace API Client Initialized. connectClient object:", connectClient);
                 showStatus("Workspace API connected. Getting context and models...", 'info');
 
+                // Get project and model info concurrently
                 await Promise.all([
                      getProjectContext(),
                      getModelContext()
                 ]);
 
-                // Check if both IDs were successfully retrieved AFTER awaiting promises
-                if (targetProjectId && targetIfcIdentifier) {
+                // Final check and button enablement
+                if (targetProjectId && targetFileId) { // Check for targetFileId now
                      validateButton.disabled = false;
                      showStatus("Ready to validate.", 'success');
                 } else {
                      validateButton.disabled = true;
-                     if (!targetProjectId && !targetIfcIdentifier){
-                        showStatus("Could not identify project context or target model.", 'error');
+                     if (!targetProjectId && !targetFileId){
+                        showStatus("Could not identify project context or target model file ID.", 'error');
                      } else if (!targetProjectId) {
                         showStatus("Could not identify project context.", 'error');
-                     } else {
-                        showStatus("Could not identify target model identifier.", 'error');
+                     } else { // Only targetFileId must be missing
+                        showStatus("Could not identify target model file ID.", 'error');
                      }
                 }
 
@@ -120,70 +120,57 @@
             }
         }
 
-        // --- Function to get Project Context (Revised) ---
+        // --- Function to get Project Context ---
         async function getProjectContext() {
-             targetProjectId = null; // Reset before trying
-             targetProjectInfoEl.textContent = "Fetching project info..."; // Update UI
+             targetProjectId = null;
+             targetProjectInfoEl.textContent = "Fetching project info...";
 
              if (!connectClient) {
                   console.error("getProjectContext called but connectClient is null.");
                   targetProjectInfoEl.textContent = "API Client not ready.";
                   return;
              }
-
              try {
                  let context = null;
-                 // Try using connectClient.context first
                  if (connectClient.context && typeof connectClient.context.get === 'function') {
-                     console.log("Attempting to get context via connectClient.context.get()");
+                     console.log("Attempting context via connectClient.context.get()");
                      context = await connectClient.context.get();
-                     console.log("Context received from context.get():", context);
-                 }
-                 // If context doesn't exist or didn't work, try connectClient.project
-                 else if (connectClient.project && typeof connectClient.project.getCurrentProject === 'function') {
-                     console.log("connectClient.context not found or not usable, trying connectClient.project.getCurrentProject()");
-                     // Note: getCurrentProject might return slightly different structure
+                     console.log("Context from context.get():", context);
+                 } else if (connectClient.project && typeof connectClient.project.getCurrentProject === 'function') {
+                     console.log("Trying connectClient.project.getCurrentProject()");
                      const projectInfo = await connectClient.project.getCurrentProject();
-                     console.log("Project info received from project.getCurrentProject():", projectInfo);
-                     // Adapt structure if needed - assuming it might have a 'project' property or be the project object directly
-                     context = projectInfo; // Or maybe context = { project: projectInfo } depending on result
-                 }
-                  else {
-                      console.error("Neither connectClient.context.get nor connectClient.project.getCurrentProject seem available.");
+                     console.log("Info from project.getCurrentProject():", projectInfo);
+                     context = projectInfo; // Assume this object might contain the ID directly or nested
+                 } else {
+                      console.error("No method found to get project context.");
                       targetProjectInfoEl.textContent = "Cannot access context/project API.";
-                      return; // Exit if no method found
+                      return;
                   }
 
-                 // Now extract the project ID from whatever context/projectInfo object we got
-                 if (context && context.projectId) { // Check for projectId directly
-                     targetProjectId = context.projectId;
-                 } else if (context && context.project && context.project.id) { // Check for nested project.id
-                     targetProjectId = context.project.id;
-                 } else if (context && context.id) { // Check if the object itself has the id (e.g., from getCurrentProject)
-                     targetProjectId = context.id;
-                 }
+                 // Extract project ID
+                 if (context && context.projectId) { targetProjectId = context.projectId; }
+                 else if (context && context.project && context.project.id) { targetProjectId = context.project.id; }
+                 else if (context && context.id) { targetProjectId = context.id; }
 
-                 // Update UI based on result
+                 // Update UI
                  if (targetProjectId) {
                      targetProjectInfoEl.textContent = `Project ID: ${targetProjectId}`;
                      console.log(`Using Project ID: ${targetProjectId}`);
                  } else {
-                     targetProjectInfoEl.textContent = "Could not find Project ID in context/project data.";
+                     targetProjectInfoEl.textContent = "Could not find Project ID.";
                      console.error("Could not find Project ID in received object:", context);
                  }
-
              } catch(error) {
                  console.error("Failed to get project context:", error);
                  targetProjectInfoEl.textContent = "Error getting project info.";
-                 targetProjectId = null; // Ensure null on error
+                 targetProjectId = null;
              }
         }
 
         // --- Function to get Model Context from Viewer ---
         async function getModelContext() {
-            // ... (getModelContext logic remains the same) ...
-             targetIfcIdentifier = null; // Reset before trying
-             targetIfcInfoEl.textContent = "Fetching model info..."; // Update UI
+             targetFileId = null; // Reset before trying
+             targetIfcInfoEl.textContent = "Fetching model info...";
 
              if (!connectClient || !connectClient.viewer) {
                  console.error("connectClient or connectClient.viewer is not defined.");
@@ -197,31 +184,20 @@
                     const primaryModel = models[0];
                     console.log("Primary Model:", primaryModel);
                     targetIfcName = primaryModel.name || "Unnamed Model";
-                    // Prioritize downloadUrl, then fileId, versionId, id
-                    if (primaryModel.downloadUrl) {
-                        targetIfcIdentifier = primaryModel.downloadUrl;
-                        targetIfcInfoEl.textContent = `Using Download URL`;
-                        console.log(`Using Download URL: ${targetIfcIdentifier}`);
+
+                    // *** Look specifically for fileId ***
+                    if (primaryModel.fileId) {
+                        targetFileId = primaryModel.fileId; // Store the fileId
+                        targetIfcInfoEl.textContent = `Using File ID: ${targetFileId}`;
+                        console.log(`Using File ID: ${targetFileId}`);
                     }
-                    else if (primaryModel.fileId) {
-                        targetIfcIdentifier = primaryModel.fileId;
-                        targetIfcInfoEl.textContent = `Using File ID: ${targetIfcIdentifier}`;
-                        console.log(`Using File ID: ${targetIfcIdentifier}`);
-                    }
-                    else if (primaryModel.versionId) {
-                         targetIfcIdentifier = primaryModel.versionId;
-                         targetIfcInfoEl.textContent = `Using Version ID: ${targetIfcIdentifier}`;
-                         console.log(`Using Version ID: ${targetIfcIdentifier}`);
-                    }
-                     else if (primaryModel.id) {
-                         targetIfcIdentifier = primaryModel.id;
-                         targetIfcInfoEl.textContent = `Using Model ID: ${targetIfcIdentifier}`;
-                         console.log(`Using Model ID: ${targetIfcIdentifier}`);
-                    }
+                    // Log other potential IDs if fileId is missing, but don't store them for backend use yet
                     else {
-                        targetIfcIdentifier = null;
-                        targetIfcInfoEl.textContent = "Could not find usable ID or URL for the model.";
-                        console.error("Could not find usable identifier in model object:", primaryModel);
+                        targetIfcInfoEl.textContent = "Could not find fileId for the model.";
+                        if (primaryModel.versionId) console.log(`Found Version ID: ${primaryModel.versionId}`);
+                        if (primaryModel.id) console.log(`Found Model ID: ${primaryModel.id}`);
+                        if (primaryModel.downloadUrl) console.log(`Found Download URL: ${primaryModel.downloadUrl}`);
+                        console.error("Could not find fileId in model object:", primaryModel);
                     }
                     targetIfcNameEl.textContent = targetIfcName;
 
@@ -234,27 +210,28 @@
                 showStatus("Error getting models from Workspace API viewer.", 'error');
                 console.error("Failed to get viewer models:", error);
                 targetIfcNameEl.textContent = "Error getting model info.";
-                 targetIfcIdentifier = null;
+                 targetFileId = null; // Ensure null on error
             }
         }
 
         // --- Form Submission Logic ---
         validationForm.addEventListener('submit', async (event) => {
-            // ... (submit logic remains the same) ...
              event.preventDefault();
             const idsFile = idsFileInput.files[0];
+
             console.log("--- Submit Handler Started ---");
             console.log("Value of targetProjectId at submit:", targetProjectId);
-            console.log("Value of targetIfcIdentifier at submit:", targetIfcIdentifier);
+            console.log("Value of targetFileId at submit:", targetFileId); // Log targetFileId
             console.log("Value of idsFile at submit:", idsFile ? idsFile.name : 'No file selected');
+
             if (!targetProjectId) {
-                 showStatus('Error: Target Project ID not identified before submit.', 'error');
-                 console.error("Submit blocked: targetProjectId is null or empty.");
+                 showStatus('Error: Target Project ID not identified.', 'error');
+                 console.error("Submit blocked: targetProjectId is null.");
                  return;
             }
-            if (!targetIfcIdentifier) {
-                showStatus('Error: Target IFC model identifier not identified before submit.', 'error');
-                console.error("Submit blocked: targetIfcIdentifier is null or empty.");
+            if (!targetFileId) { // Check targetFileId
+                showStatus('Error: Target IFC File ID not identified.', 'error');
+                console.error("Submit blocked: targetFileId is null.");
                 return;
             }
             if (!idsFile) {
@@ -262,17 +239,19 @@
                  console.error("Submit blocked: idsFile is missing.");
                 return;
             }
+
             validateButton.disabled = true;
             showStatus('Processing... Sending data to validation server.', 'processing');
             resultsDiv.classList.add('hidden');
+
             const formData = new FormData();
             formData.append('projectId', targetProjectId);
-            formData.append('ifcIdentifier', targetIfcIdentifier);
+            formData.append('ifcFileId', targetFileId); // Send fileId with the key 'ifcFileId'
             formData.append('idsFile', idsFile);
+
              console.log("FormData keys being sent:");
-             for (let key of formData.keys()) {
-                console.log(`  - ${key}`);
-             }
+             for (let key of formData.keys()) { console.log(`  - ${key}`); }
+
             try {
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -293,7 +272,8 @@
                 showStatus('Error: Could not connect to the validation server.', 'error');
                 resultsDiv.classList.add('hidden');
             } finally {
-                validateButton.disabled = !(targetProjectId && targetIfcIdentifier);
+                // Re-enable button only if we still have identifiers
+                validateButton.disabled = !(targetProjectId && targetFileId);
             }
         });
 
@@ -317,14 +297,3 @@
 
 </body>
 </html>
-```
-
-**Instructions:**
-
-1.  **Deploy** the updated frontend code.
-2.  **Reload** Trimble Connect and your extension.
-3.  Open the **Console** in your browser's Developer Tools (F12).
-4.  Look for the line: `Workspace API Client Initialized. connectClient object: ...`. Expand the object that's logged there. What properties does it show? Does it have `.context`? Does it have `.project`?
-5.  Look for the logs from the `getProjectContext` function. Does it say it's trying `context.get()` or `project.getCurrentProject()`? What object structure is logged for the context or project info? Does it successfully find and log the Project ID?
-
-This should give us a clear picture of what the Workspace API client object looks like and how to correctly access the project informati
