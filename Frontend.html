@@ -84,7 +84,7 @@
         const targetButton = document.getElementById('targetButton');
         const validateButton = document.getElementById('validateButton');
         const statusDiv = document.getElementById('status');
-        const resultsContainer = document.getElementById('resultsContainer'); // Changed ID
+        const resultsContainer = document.getElementById('resultsContainer');
         const resultsDiv = document.getElementById('results');
         const resultsContent = document.getElementById('resultsContent');
         const targetIfcNameEl = document.getElementById('targetIfcName');
@@ -95,12 +95,12 @@
         const clearColorButton = document.getElementById('clearColorButton');
 
         // --- State Variables ---
-        const apiUrl = 'https://your-username.pythonanywhere.com/validate'; // Replace!
+        const apiUrl = 'https://KMulvey.pythonanywhere.com/validate'; // Replace!
         let connectClient = null;
         let targetFileId = null;
         let targetProjectId = null;
         let userAccessToken = null;
-        let validationResultsData = null; // Store the detailed results from backend
+        let validationResultsData = null;
 
         // --- Colors ---
         const COLOR_PASS = { r: 0, g: 255, b: 0, a: 255 }; // Green
@@ -182,8 +182,7 @@
          }
 
          // --- Function to handle Targeting Button Click ---
-         targetButton.addEventListener('click', async () => {
-             // ... (logic to get selection and set targetFileId remains the same) ...
+         targetButton.addEventListener('click', async () => { /* ... unchanged ... */
              targetFileId = null;
              targetIfcNameEl.textContent = "Getting selection...";
              targetIfcInfoEl.textContent = "";
@@ -212,8 +211,7 @@
          });
 
          // --- Helper to check if validate button should be enabled ---
-         function checkAndEnableValidateButton() {
-             // ... (logic remains the same) ...
+         function checkAndEnableValidateButton() { /* ... unchanged ... */
              console.log("Checking button status:");
              console.log(`  - targetProjectId: ${targetProjectId}`);
              console.log(`  - targetFileId: ${targetFileId}`);
@@ -231,8 +229,7 @@
          }
 
         // --- Form Submission Logic ---
-        validationForm.addEventListener('submit', async (event) => {
-            // ... (Submit logic remains the same - sends IDs and token to backend) ...
+        validationForm.addEventListener('submit', async (event) => { /* ... unchanged ... */
              event.preventDefault();
             const idsFile = idsFileInput.files[0];
             console.log("--- Submit Handler Started ---");
@@ -246,11 +243,11 @@
                  return;
             }
             validateButton.disabled = true;
-            applyColorButton.disabled = true; // Disable color buttons during validation
+            applyColorButton.disabled = true;
             clearColorButton.disabled = true;
             showStatus('Processing... Sending data to backend server.', 'processing');
-            resultsContainer.classList.add('hidden'); // Hide previous results container
-            validationResultsData = null; // Clear previous results data
+            resultsContainer.classList.add('hidden');
+            validationResultsData = null;
 
             const formData = new FormData();
             formData.append('projectId', targetProjectId);
@@ -261,12 +258,12 @@
              for (let key of formData.keys()) { console.log(`  - ${key}`); }
             try {
                 const response = await fetch(apiUrl, { method: 'POST', body: formData });
-                const resultData = await response.json(); // Store results
-                validationResultsData = resultData; // Store for coloring
+                const resultData = await response.json();
+                validationResultsData = resultData;
                 if (response.ok) {
                     showStatus(`Validation complete: ${resultData.message || 'Status received.'}`, 'success');
-                    displayResults(resultData); // Display text results
-                    applyColorButton.disabled = false; // Enable color buttons on success
+                    displayResults(resultData);
+                    applyColorButton.disabled = false;
                     clearColorButton.disabled = false;
                 } else {
                     const errorMessage = resultData.error || `Server responded with status ${response.status}`;
@@ -279,137 +276,66 @@
                 showStatus('Error: Could not connect to the validation server.', 'error');
                 resultsContainer.classList.add('hidden');
             } finally {
-                // Re-enable validate button only if initial conditions are met
                 validateButton.disabled = !(targetProjectId && targetFileId && userAccessToken);
             }
         });
 
         // --- Function to Apply Coloring ---
-        applyColorButton.addEventListener('click', async () => {
-            if (!validationResultsData || !validationResultsData.details || !connectClient || !connectClient.viewer) {
-                showStatus("No validation results available or API not ready.", 'error');
-                return;
-            }
-            if (!targetFileId) {
-                 showStatus("Target File ID is missing, cannot apply colors.", 'error');
-                 return;
-            }
-
+        applyColorButton.addEventListener('click', async () => { /* ... unchanged ... */
+            if (!validationResultsData || !validationResultsData.details || !connectClient || !connectClient.viewer) { showStatus("No validation results available or API not ready.", 'error'); return; }
+            if (!targetFileId) { showStatus("Target File ID is missing, cannot apply colors.", 'error'); return; }
             console.log("Applying colors based on results...");
             showStatus("Applying colors...", 'processing');
-            applyColorButton.disabled = true; // Disable during processing
-            clearColorButton.disabled = true;
-
+            applyColorButton.disabled = true; clearColorButton.disabled = true;
             try {
-                let allPassedGuids = new Set();
-                let allFailedGuids = new Set();
-
-                // Aggregate all passed and failed GUIDs across all specifications
+                let allPassedGuids = new Set(); let allFailedGuids = new Set();
                 for (const specName in validationResultsData.details) {
                     const specResult = validationResultsData.details[specName];
-                    if (specResult.passed_guids) {
-                        specResult.passed_guids.forEach(guid => allPassedGuids.add(guid));
-                    }
-                    if (specResult.failed_guids) {
-                        specResult.failed_guids.forEach(guid => allFailedGuids.add(guid));
-                    }
+                    if (specResult.passed_guids) { specResult.passed_guids.forEach(guid => allPassedGuids.add(guid)); }
+                    if (specResult.failed_guids) { specResult.failed_guids.forEach(guid => allFailedGuids.add(guid)); }
                 }
-
-                // Elements that failed override passing status
                 const finalPassedGuids = [...allPassedGuids].filter(guid => !allFailedGuids.has(guid));
                 const finalFailedGuids = [...allFailedGuids];
-
-                console.log("Final Passed GUIDs:", finalPassedGuids);
-                console.log("Final Failed GUIDs:", finalFailedGuids);
-
-                // Prepare API calls
+                console.log("Final Passed GUIDs:", finalPassedGuids); console.log("Final Failed GUIDs:", finalFailedGuids);
                 const colorPromises = [];
-
-                // Apply green to passed objects
                 if (finalPassedGuids.length > 0) {
-                    const selector = { objectGuids: finalPassedGuids };
-                    const state = { color: COLOR_PASS, clear: false }; // Don't clear other states
-                    console.log("Setting state for PASSING objects:", selector, state);
-                    colorPromises.push(connectClient.viewer.setObjectState(selector, state));
+                    const selector = { objectGuids: finalPassedGuids }; const state = { color: COLOR_PASS, clear: false };
+                    console.log("Setting state for PASSING objects:", selector, state); colorPromises.push(connectClient.viewer.setObjectState(selector, state));
                 }
-
-                // Apply red to failed objects
                 if (finalFailedGuids.length > 0) {
-                    const selector = { objectGuids: finalFailedGuids };
-                    const state = { color: COLOR_FAIL, clear: false }; // Don't clear other states
-                    console.log("Setting state for FAILING objects:", selector, state);
-                    colorPromises.push(connectClient.viewer.setObjectState(selector, state));
+                    const selector = { objectGuids: finalFailedGuids }; const state = { color: COLOR_FAIL, clear: false };
+                    console.log("Setting state for FAILING objects:", selector, state); colorPromises.push(connectClient.viewer.setObjectState(selector, state));
                 }
-
-                if (colorPromises.length > 0) {
-                    await Promise.all(colorPromises);
-                    showStatus("Colors applied successfully.", 'success');
-                    console.log("Coloring applied.");
-                } else {
-                     showStatus("No objects found to color based on results.", 'info');
-                     console.log("No coloring applied (no pass/fail GUIDs).");
-                }
-
-            } catch (error) {
-                console.error("Error applying colors:", error);
-                showStatus(`Error applying colors: ${error.message}`, 'error');
-            } finally {
-                 applyColorButton.disabled = false; // Re-enable buttons
-                 clearColorButton.disabled = false;
-            }
+                if (colorPromises.length > 0) { await Promise.all(colorPromises); showStatus("Colors applied successfully.", 'success'); console.log("Coloring applied."); }
+                else { showStatus("No objects found to color based on results.", 'info'); console.log("No coloring applied."); }
+            } catch (error) { console.error("Error applying colors:", error); showStatus(`Error applying colors: ${error.message}`, 'error');
+            } finally { applyColorButton.disabled = false; clearColorButton.disabled = false; }
         });
 
         // --- Function to Clear Coloring ---
-        clearColorButton.addEventListener('click', async () => {
-             if (!connectClient || !connectClient.viewer) {
-                showStatus("API not ready.", 'error');
-                return;
-            }
-             if (!validationResultsData || !validationResultsData.details) {
-                 showStatus("No validation results available to clear.", 'info');
-                 return;
-             }
-             if (!targetFileId) {
-                 showStatus("Target File ID is missing, cannot clear colors.", 'error');
-                 return;
-            }
-
-            console.log("Clearing colors...");
-            showStatus("Clearing colors...", 'processing');
-            applyColorButton.disabled = true; // Disable during processing
-            clearColorButton.disabled = true;
-
-            try {
+        clearColorButton.addEventListener('click', async () => { /* ... unchanged ... */
+             if (!connectClient || !connectClient.viewer) { showStatus("API not ready.", 'error'); return; }
+             if (!validationResultsData || !validationResultsData.details) { showStatus("No validation results available to clear.", 'info'); return; }
+             if (!targetFileId) { showStatus("Target File ID is missing, cannot clear colors.", 'error'); return; }
+             console.log("Clearing colors...");
+             showStatus("Clearing colors...", 'processing');
+             applyColorButton.disabled = true; clearColorButton.disabled = true;
+             try {
                  let allGuidsToClear = new Set();
                  for (const specName in validationResultsData.details) {
                      const specResult = validationResultsData.details[specName];
                      if (specResult.passed_guids) specResult.passed_guids.forEach(guid => allGuidsToClear.add(guid));
                      if (specResult.failed_guids) specResult.failed_guids.forEach(guid => allGuidsToClear.add(guid));
                  }
-
-                 const guidsArray = [...allGuidsToClear];
-                 console.log("GUIDs to clear:", guidsArray);
-
+                 const guidsArray = [...allGuidsToClear]; console.log("GUIDs to clear:", guidsArray);
                  if (guidsArray.length > 0) {
-                     const selector = { objectGuids: guidsArray };
-                     // State with clear: true resets color and potentially other states
-                     const state = { clear: true };
+                     const selector = { objectGuids: guidsArray }; const state = { clear: true };
                      console.log("Clearing state for objects:", selector, state);
                      await connectClient.viewer.setObjectState(selector, state);
-                     showStatus("Colors cleared successfully.", 'success');
-                     console.log("Coloring cleared.");
-                 } else {
-                     showStatus("No validation results found to clear colors from.", 'info');
-                     console.log("No coloring to clear.");
-                 }
-
-            } catch (error) {
-                console.error("Error clearing colors:", error);
-                showStatus(`Error clearing colors: ${error.message}`, 'error');
-            } finally {
-                 applyColorButton.disabled = false; // Re-enable buttons
-                 clearColorButton.disabled = false;
-            }
+                     showStatus("Colors cleared successfully.", 'success'); console.log("Coloring cleared.");
+                 } else { showStatus("No validation results found to clear colors from.", 'info'); console.log("No coloring to clear."); }
+             } catch (error) { console.error("Error clearing colors:", error); showStatus(`Error clearing colors: ${error.message}`, 'error');
+             } finally { applyColorButton.disabled = false; clearColorButton.disabled = false; }
         });
 
 
@@ -422,12 +348,17 @@
             statusDiv.classList.remove('hidden');
         }
         function displayResults(data) {
+             // *** ADDED LOGGING HERE ***
+             console.log("Attempting to display results. Container:", resultsContainer);
              resultsContainer.classList.remove('hidden'); // Show the whole results container
+             console.log("resultsContainer classList after remove('hidden'):", resultsContainer.classList);
+
              resultsContent.textContent = JSON.stringify(data, null, 2); // Display text results
              // Enable/disable color buttons based on whether results exist
              const hasResults = data && data.details && Object.keys(data.details).length > 0;
              applyColorButton.disabled = !hasResults;
              clearColorButton.disabled = !hasResults;
+             console.log(`Color buttons enabled: ${!applyColorButton.disabled}`);
         }
 
         // --- Initialize API on page load ---
@@ -437,3 +368,18 @@
 
 </body>
 </html>
+```
+
+I've added logging inside the `displayResults` function to confirm it's being called and to check the `classList` of the `resultsContainer` immediately after attempting to remove the `hidden` class.
+
+**Instructions:**
+
+1.  **Deploy** this updated frontend code.
+2.  **Reload** Trimble Connect and your extension.
+3.  Run the validation process again.
+4.  Check the **Console** logs. Look for the logs originating from the `displayResults` function:
+    * `Attempting to display results. Container: ...`
+    * `resultsContainer classList after remove('hidden'): ...`
+5.  What does the second log show for the `classList`? Does it still include the `hidden` class?
+
+This will tell us if the JavaScript command to unhide the container is working as expect
