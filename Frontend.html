@@ -56,7 +56,7 @@
 
     <script>
         const idsFileInput = document.getElementById('idsFile');
-        const targetButton = document.getElementById('targetButton'); // New button
+        const targetButton = document.getElementById('targetButton');
         const validateButton = document.getElementById('validateButton');
         const statusDiv = document.getElementById('status');
         const resultsDiv = document.getElementById('results');
@@ -70,50 +70,43 @@
         const apiUrl = 'https://KMulvey.pythonanywhere.com/validate'; // Or http://localhost:8080
 
         let connectClient = null;
-        let targetFileId = null; // Stores the File ID from selection
+        let targetFileId = null;
         let targetIfcName = "Unknown Model";
         let targetProjectId = null;
-        let userAccessToken = null; // Stores user token
+        let userAccessToken = null;
 
         // --- Workspace API Initialization ---
         async function initializeConnectAPI() {
+            // ... (Initialization logic remains largely the same) ...
             targetIfcNameEl.textContent = "Initializing connection...";
             console.log("Attempting to initialize Workspace API...");
             try {
-                if (typeof TrimbleConnectWorkspace === 'undefined') {
-                    throw new Error("Trimble Connect Workspace API client not found.");
-                }
+                if (typeof TrimbleConnectWorkspace === 'undefined') { throw new Error("Trimble Connect Workspace API client not found."); }
+
                 connectClient = await TrimbleConnectWorkspace.connect(window.parent, (event, data) => {
                     console.log('Event from Trimble Connect:', event, data);
                     if (event === 'extension.accessToken') { handleTokenEvent(data); }
-                    // Enable targeting button once viewer API is likely ready
-                    if (connectClient && connectClient.viewer) {
-                         targetButton.disabled = false;
-                    }
+                    if (connectClient && connectClient.viewer) { targetButton.disabled = false; } // Enable target button once viewer API seems ready
                 });
-                console.log("Workspace API Client Initialized:", connectClient);
-                showStatus("Workspace API connected. Fetching project context...", 'info');
-                targetButton.disabled = false; // Enable target button after connection
 
-                // Fetch project context and request token permission
-                await Promise.all([
-                    getProjectContext(),
-                    requestTokenPermission()
-                ]);
+                console.log("Workspace API Client Initialized:", connectClient);
+                showStatus("Workspace API connected. Fetching project context & token permission...", 'info');
+                targetButton.disabled = false; // Enable target button
+
+                await Promise.all([ getProjectContext(), requestTokenPermission() ]);
                 checkAndEnableValidateButton(); // Initial check
 
             } catch (error) {
                 showStatus(`Error initializing Workspace API: ${error.message}`, 'error');
                 console.error("Initialization failed:", error);
                 targetIfcNameEl.textContent = "Error connecting to Trimble Connect.";
-                targetButton.disabled = true;
-                validateButton.disabled = true;
+                targetButton.disabled = true; validateButton.disabled = true;
             }
         }
 
         // --- Function to get Project Context ---
         async function getProjectContext() {
-            // ... (getProjectContext logic remains the same - gets targetProjectId) ...
+            // ... (getProjectContext logic remains the same) ...
              targetProjectId = null;
              targetProjectInfoEl.textContent = "Fetching project info...";
              if (!connectClient) { console.error("getProjectContext: connectClient null"); targetProjectInfoEl.textContent = "API Client not ready."; return; }
@@ -130,7 +123,7 @@
                  if (targetProjectId) { targetProjectInfoEl.textContent = `Project ID: ${targetProjectId}`; console.log(`Using Project ID: ${targetProjectId}`); }
                  else { targetProjectInfoEl.textContent = "Could not find Project ID."; console.error("Could not find Project ID in context:", context); }
              } catch(error) { console.error("Failed to get project context:", error); targetProjectInfoEl.textContent = "Error getting project info."; targetProjectId = null; }
-             checkAndEnableValidateButton(); // Check if validate can be enabled
+             checkAndEnableValidateButton();
         }
 
         // --- Function to get Model details based on ID ---
@@ -139,10 +132,7 @@
             try {
                 const models = await connectClient.viewer.getModels();
                 return models.find(m => m.id === modelId);
-            } catch (error) {
-                console.error("Error fetching models to get details:", error);
-                return null;
-            }
+            } catch (error) { console.error("Error fetching models to get details:", error); return null; }
         }
 
         // --- Function to handle Token Event ---
@@ -150,42 +140,28 @@
              if (data && typeof data === 'string' && data !== 'denied') {
                  console.log("Received user access token via event.");
                  userAccessToken = data;
-                 checkAndEnableValidateButton(); // Check if validate can be enabled now
+                 checkAndEnableValidateButton();
              } else {
                   console.error("Access token denied or invalid data received via event:", data);
                   showStatus("Permission denied to access user token.", 'error');
-                  userAccessToken = null;
-                  validateButton.disabled = true; // Keep disabled
+                  userAccessToken = null; validateButton.disabled = true;
              }
         }
 
          // --- Function to request user access token ---
          async function requestTokenPermission() {
-             userAccessToken = null; // Reset token
-             if (!connectClient || !connectClient.extension) {
-                 console.error("Cannot request token: connectClient.extension not available.");
-                 showStatus("Cannot request token permission.", 'error');
-                 return;
-             }
+             userAccessToken = null;
+             if (!connectClient || !connectClient.extension) { console.error("Cannot request token: connectClient.extension not available."); showStatus("Cannot request token permission.", 'error'); return; }
              try {
                  console.log("Requesting accesstoken permission...");
                  const tokenStatus = await connectClient.extension.requestPermission("accesstoken");
                  console.log("Access token request status:", tokenStatus);
                  if (typeof tokenStatus === 'string' && tokenStatus !== 'pending' && tokenStatus !== 'denied') {
-                     userAccessToken = tokenStatus;
-                     console.log("User access token obtained directly.");
-                 } else if (tokenStatus === 'pending') {
-                     console.log("Token permission pending user consent. Waiting for event.");
-                     showStatus("Token permission pending user consent...", 'info');
-                 } else {
-                      console.error("Access token permission denied by user or error.");
-                      showStatus("Permission denied to access user token.", 'error');
-                 }
-             } catch (error) {
-                 console.error("Error requesting token permission:", error);
-                 showStatus("Error occurred while requesting token permission.", 'error');
-             }
-             checkAndEnableValidateButton(); // Check if validate can be enabled
+                     userAccessToken = tokenStatus; console.log("User access token obtained directly.");
+                 } else if (tokenStatus === 'pending') { console.log("Token permission pending user consent."); showStatus("Token permission pending user consent...", 'info');
+                 } else { console.error("Access token permission denied by user or error."); showStatus("Permission denied to access user token.", 'error'); }
+             } catch (error) { console.error("Error requesting token permission:", error); showStatus("Error occurred while requesting token permission.", 'error'); }
+             checkAndEnableValidateButton();
          }
 
          // --- Function to handle Targeting Button Click ---
@@ -194,6 +170,7 @@
              targetIfcNameEl.textContent = "Getting selection...";
              targetIfcInfoEl.textContent = "";
              validateButton.disabled = true; // Disable validate until successful targeting
+             showStatus("Getting selected model ID...", 'processing'); // Update status
 
              if (!connectClient || !connectClient.viewer) {
                  showStatus("Error: Viewer API not available.", 'error');
@@ -205,19 +182,17 @@
                  console.log("Selection received:", selection);
 
                  if (selection && selection.objects && selection.objects.length > 0) {
-                     // Use the modelId from the first selected object
                      const selectedModelId = selection.objects[0].modelId;
                      if (selectedModelId) {
                          targetFileId = selectedModelId; // Assume modelId is the fileId needed
 
-                         // Try to get the model name for display
                          const modelDetails = await getModelDetailsById(targetFileId);
                          targetIfcName = modelDetails ? modelDetails.name : "Unknown Name";
 
                          targetIfcNameEl.textContent = targetIfcName;
                          targetIfcInfoEl.textContent = `Targeted File ID: ${targetFileId}`;
                          console.log(`Targeted File ID: ${targetFileId} (Name: ${targetIfcName})`);
-                         showStatus("Model targeted successfully.", 'success');
+                         // Don't set status here, let checkAndEnableValidateButton handle it
                      } else {
                          targetIfcNameEl.textContent = "Selected object has no model ID.";
                          targetIfcInfoEl.textContent = "";
@@ -227,7 +202,7 @@
                  } else {
                      targetIfcNameEl.textContent = "No object selected in viewer.";
                      targetIfcInfoEl.textContent = "Select an object from the desired model.";
-                     showStatus("No object selected.", 'info');
+                     showStatus("No object selected.", 'info'); // Keep this status
                  }
              } catch (error) {
                  console.error("Error getting selection:", error);
@@ -235,26 +210,43 @@
                  targetIfcInfoEl.textContent = "";
                  showStatus("Error getting selection from viewer.", 'error');
              }
-             checkAndEnableValidateButton(); // Check if validate can be enabled
+             // Call checkAndEnableValidateButton AFTER attempting to set targetFileId
+             checkAndEnableValidateButton();
          });
 
 
          // --- Helper to check if validate button should be enabled ---
          function checkAndEnableValidateButton() {
+             // *** ADDED LOGGING INSIDE THE CHECK ***
+             console.log("Checking button status:");
+             console.log(`  - targetProjectId: ${targetProjectId}`);
+             console.log(`  - targetFileId: ${targetFileId}`);
+             console.log(`  - userAccessToken: ${userAccessToken ? 'Present' : 'Missing'}`);
+
              if (targetProjectId && targetFileId && userAccessToken) {
                  validateButton.disabled = false;
-                 // Don't overwrite status if it's already showing an error/info
-                 if (!statusDiv.textContent || statusDiv.classList.contains('status-success')) {
+                 // Only update status if it's not already showing an error/info
+                 if (!statusDiv.classList.contains('status-error') && !statusDiv.classList.contains('status-info')) {
                     showStatus("Ready to validate.", 'success');
                  }
+                 console.log("==> Validate button ENABLED.");
              } else {
                  validateButton.disabled = true;
+                 // Don't overwrite specific error/info messages unnecessarily
+                 if (!statusDiv.classList.contains('status-error') && !statusDiv.classList.contains('status-info')) {
+                    if (!targetFileId && targetProjectId) { // Only show 'no object' if project is loaded
+                        showStatus("No object selected.", 'info');
+                    } else {
+                         // Keep existing status message (e.g., "Waiting for token", "Could not get context")
+                    }
+                 }
+                 console.log("==> Validate button DISABLED.");
              }
          }
 
         // --- Form Submission Logic ---
         validationForm.addEventListener('submit', async (event) => {
-            // ... (Submit logic remains the same - sends targetProjectId, targetFileId, idsFile, userAccessToken) ...
+            // ... (Submit logic remains the same) ...
              event.preventDefault();
             const idsFile = idsFileInput.files[0];
             console.log("--- Submit Handler Started ---");
