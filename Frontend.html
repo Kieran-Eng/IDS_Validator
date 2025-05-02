@@ -181,27 +181,35 @@
                  const selection = await connectClient.viewer.getSelection();
                  console.log("Selection received:", selection);
 
-                 // *** ADDED DETAILED CHECKS and LOGS ***
-                 console.log("Checking selection validity...");
-                 const hasSelection = !!selection;
-                 const hasObjects = hasSelection && !!selection.objects;
-                 const hasLength = hasObjects && typeof selection.objects.length !== 'undefined';
-                 const hasFirstObject = hasLength && selection.objects.length > 0 && !!selection.objects[0];
+                 // *** ADDED MORE DETAILED LOGGING FOR THE IF CONDITION ***
+                 console.log("--- Evaluating selection condition ---");
+                 let conditionMet = false;
+                 if (selection) {
+                     console.log("Condition check: selection exists? TRUE");
+                     if (selection.objects) {
+                         console.log("Condition check: selection.objects exists? TRUE");
+                         if (typeof selection.objects.length !== 'undefined') {
+                            console.log(`Condition check: selection.objects has length? TRUE (Length: ${selection.objects.length})`);
+                             if (selection.objects.length > 0) {
+                                 console.log("Condition check: selection.objects.length > 0? TRUE");
+                                 if (selection.objects[0]) {
+                                     console.log("Condition check: selection.objects[0] exists? TRUE");
+                                     conditionMet = true; // All parts of the condition passed
+                                 } else { console.log("Condition check: selection.objects[0] exists? FALSE"); }
+                             } else { console.log("Condition check: selection.objects.length > 0? FALSE"); }
+                         } else { console.log("Condition check: selection.objects has length? FALSE"); }
+                     } else { console.log("Condition check: selection.objects exists? FALSE"); }
+                 } else { console.log("Condition check: selection exists? FALSE"); }
+                 console.log(`--- Condition evaluation result: ${conditionMet} ---`);
+                 // *** END DETAILED LOGGING ***
 
-                 console.log(` - selection exists: ${hasSelection}`);
-                 console.log(` - selection.objects exists: ${hasObjects}`);
-                 console.log(` - selection.objects has length property: ${hasLength}`);
-                 console.log(` - selection.objects.length > 0: ${hasLength && selection.objects.length > 0}`);
-                 console.log(` - selection.objects[0] exists: ${hasFirstObject}`);
-                 // *** END DETAILED CHECKS ***
-
-                 if (hasFirstObject) { // Use the detailed check variable
+                 if (conditionMet) { // Use the result of the detailed check
                      console.log("Selection object [0]:", selection.objects[0]);
                      const selectedModelId = selection.objects[0].modelId;
                      console.log(`Extracted selectedModelId: ${selectedModelId} (type: ${typeof selectedModelId})`);
 
-                     if (selectedModelId) { // Check if extracted ID is truthy
-                         targetFileId = selectedModelId; // Assign to global variable
+                     if (selectedModelId) {
+                         targetFileId = selectedModelId;
                          console.log(`Assigned targetFileId: ${targetFileId}`);
 
                          let modelDetails = null;
@@ -222,12 +230,8 @@
                  } else {
                      targetIfcNameEl.textContent = "No object selected in viewer.";
                      targetIfcInfoEl.textContent = "Select an object from the desired model.";
-                     if (!hasSelection) console.log("Selection object itself is null/undefined.");
-                     else if (!hasObjects) console.log("selection.objects is null/undefined.");
-                     else if (!hasLength) console.log("selection.objects has no length property.");
-                     else if (selection.objects.length === 0) console.log("Selection received, but objects array is empty.");
-                     else if (!hasFirstObject) console.log("selection.objects[0] is null/undefined.");
-                     showStatus("No object selected.", 'info');
+                     // Log why condition failed based on previous checks if needed
+                     showStatus("No object selected or invalid selection data.", 'info');
                  }
              } catch (error) {
                  console.error("Error getting selection:", error);
