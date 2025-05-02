@@ -70,10 +70,10 @@
         const apiUrl = 'https://KMulvey.pythonanywhere.com/validate'; // Or http://localhost:8080
 
         let connectClient = null;
-        let targetFileId = null;
+        let targetFileId = null; // Stores the File ID from selection
         let targetIfcName = "Unknown Model";
         let targetProjectId = null;
-        let userAccessToken = null;
+        let userAccessToken = null; // Stores user token
 
         // --- Workspace API Initialization ---
         async function initializeConnectAPI() {
@@ -86,15 +86,15 @@
                 connectClient = await TrimbleConnectWorkspace.connect(window.parent, (event, data) => {
                     console.log('Event from Trimble Connect:', event, data);
                     if (event === 'extension.accessToken') { handleTokenEvent(data); }
-                    if (connectClient && connectClient.viewer) { targetButton.disabled = false; } // Enable target button once viewer API seems ready
+                    if (connectClient && connectClient.viewer) { targetButton.disabled = false; }
                 });
 
                 console.log("Workspace API Client Initialized:", connectClient);
                 showStatus("Workspace API connected. Fetching project context & token permission...", 'info');
-                targetButton.disabled = false; // Enable target button
+                targetButton.disabled = false;
 
                 await Promise.all([ getProjectContext(), requestTokenPermission() ]);
-                checkAndEnableValidateButton(); // Initial check
+                checkAndEnableValidateButton();
 
             } catch (error) {
                 showStatus(`Error initializing Workspace API: ${error.message}`, 'error');
@@ -169,8 +169,8 @@
              targetFileId = null; // Reset target
              targetIfcNameEl.textContent = "Getting selection...";
              targetIfcInfoEl.textContent = "";
-             validateButton.disabled = true; // Disable validate until successful targeting
-             showStatus("Getting selected model ID...", 'processing'); // Update status
+             validateButton.disabled = true;
+             showStatus("Getting selected model ID...", 'processing');
 
              if (!connectClient || !connectClient.viewer) {
                  showStatus("Error: Viewer API not available.", 'error');
@@ -184,15 +184,23 @@
                  if (selection && selection.objects && selection.objects.length > 0) {
                      const selectedModelId = selection.objects[0].modelId;
                      if (selectedModelId) {
-                         targetFileId = selectedModelId; // Assume modelId is the fileId needed
+                         targetFileId = selectedModelId; // Assign to global variable
+                         // *** ADDED LOG HERE ***
+                         console.log(`Assigned targetFileId: ${targetFileId}`);
 
-                         const modelDetails = await getModelDetailsById(targetFileId);
-                         targetIfcName = modelDetails ? modelDetails.name : "Unknown Name";
+                         // Try to get model details (wrap in try/catch)
+                         let modelDetails = null;
+                         try {
+                             modelDetails = await getModelDetailsById(targetFileId);
+                         } catch (detailsError) {
+                             console.error("Error fetching model details:", detailsError);
+                         }
+                         targetIfcName = modelDetails ? modelDetails.name : "Name Unavailable";
 
                          targetIfcNameEl.textContent = targetIfcName;
                          targetIfcInfoEl.textContent = `Targeted File ID: ${targetFileId}`;
                          console.log(`Targeted File ID: ${targetFileId} (Name: ${targetIfcName})`);
-                         // Don't set status here, let checkAndEnableValidateButton handle it
+
                      } else {
                          targetIfcNameEl.textContent = "Selected object has no model ID.";
                          targetIfcInfoEl.textContent = "";
@@ -202,7 +210,7 @@
                  } else {
                      targetIfcNameEl.textContent = "No object selected in viewer.";
                      targetIfcInfoEl.textContent = "Select an object from the desired model.";
-                     showStatus("No object selected.", 'info'); // Keep this status
+                     showStatus("No object selected.", 'info');
                  }
              } catch (error) {
                  console.error("Error getting selection:", error);
@@ -217,27 +225,24 @@
 
          // --- Helper to check if validate button should be enabled ---
          function checkAndEnableValidateButton() {
-             // *** ADDED LOGGING INSIDE THE CHECK ***
              console.log("Checking button status:");
              console.log(`  - targetProjectId: ${targetProjectId}`);
-             console.log(`  - targetFileId: ${targetFileId}`);
+             console.log(`  - targetFileId: ${targetFileId}`); // Log value here
              console.log(`  - userAccessToken: ${userAccessToken ? 'Present' : 'Missing'}`);
 
              if (targetProjectId && targetFileId && userAccessToken) {
                  validateButton.disabled = false;
-                 // Only update status if it's not already showing an error/info
                  if (!statusDiv.classList.contains('status-error') && !statusDiv.classList.contains('status-info')) {
                     showStatus("Ready to validate.", 'success');
                  }
                  console.log("==> Validate button ENABLED.");
              } else {
                  validateButton.disabled = true;
-                 // Don't overwrite specific error/info messages unnecessarily
                  if (!statusDiv.classList.contains('status-error') && !statusDiv.classList.contains('status-info')) {
-                    if (!targetFileId && targetProjectId) { // Only show 'no object' if project is loaded
+                    if (!targetFileId && targetProjectId) {
                         showStatus("No object selected.", 'info');
                     } else {
-                         // Keep existing status message (e.g., "Waiting for token", "Could not get context")
+                        // Keep existing status
                     }
                  }
                  console.log("==> Validate button DISABLED.");
@@ -310,3 +315,22 @@
 
 </body>
 </html>
+```
+
+**Instructions:**
+
+1.  **Deploy** this updated frontend code.
+2.  **Reload** Trimble Connect and your extension.
+3.  Open the **Console** (F12).
+4.  Select an object in the viewer.
+5.  Click the **"Use Selected Object's Model ID"** button.
+6.  Now, look carefully at the console logs that appear *after* `Selection received:`. You should see:
+    * `Assigned targetFileId: YOUR_MODEL_ID`
+    * Then, later, when `checkAndEnableValidateButton` runs, you should see:
+    * `Checking button status:`
+    * `  - targetProjectId: YOUR_PROJECT_ID`
+    * `  - targetFileId: YOUR_MODEL_ID` (This should *not* be null now)
+    * `  - userAccessToken: Present`
+    * `==> Validate button ENABLED.`
+
+Please check the console for the `Assigned targetFileId:` log and the subsequent `targetFileId:` log within the `Checking button status:` block. Does it show the correct ID n
