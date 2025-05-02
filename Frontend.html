@@ -181,25 +181,32 @@
                  const selection = await connectClient.viewer.getSelection();
                  console.log("Selection received:", selection);
 
-                 // Check if selection, selection.objects, and selection.objects[0] exist
-                 if (selection && selection.objects && selection.objects.length > 0 && selection.objects[0]) {
-                     console.log("Selection object [0]:", selection.objects[0]); // Log the first object
-                     const selectedModelId = selection.objects[0].modelId;
-                     // *** ADDED LOG HERE ***
-                     console.log(`Extracted selectedModelId: ${selectedModelId}`);
+                 // *** ADDED DETAILED CHECKS and LOGS ***
+                 console.log("Checking selection validity...");
+                 const hasSelection = !!selection;
+                 const hasObjects = hasSelection && !!selection.objects;
+                 const hasLength = hasObjects && typeof selection.objects.length !== 'undefined';
+                 const hasFirstObject = hasLength && selection.objects.length > 0 && !!selection.objects[0];
 
-                     if (selectedModelId) {
+                 console.log(` - selection exists: ${hasSelection}`);
+                 console.log(` - selection.objects exists: ${hasObjects}`);
+                 console.log(` - selection.objects has length property: ${hasLength}`);
+                 console.log(` - selection.objects.length > 0: ${hasLength && selection.objects.length > 0}`);
+                 console.log(` - selection.objects[0] exists: ${hasFirstObject}`);
+                 // *** END DETAILED CHECKS ***
+
+                 if (hasFirstObject) { // Use the detailed check variable
+                     console.log("Selection object [0]:", selection.objects[0]);
+                     const selectedModelId = selection.objects[0].modelId;
+                     console.log(`Extracted selectedModelId: ${selectedModelId} (type: ${typeof selectedModelId})`);
+
+                     if (selectedModelId) { // Check if extracted ID is truthy
                          targetFileId = selectedModelId; // Assign to global variable
-                         // *** ADDED LOG HERE ***
                          console.log(`Assigned targetFileId: ${targetFileId}`);
 
-                         // Try to get model details
                          let modelDetails = null;
-                         try {
-                             modelDetails = await getModelDetailsById(targetFileId);
-                         } catch (detailsError) {
-                             console.error("Error fetching model details:", detailsError);
-                         }
+                         try { modelDetails = await getModelDetailsById(targetFileId); }
+                         catch (detailsError) { console.error("Error fetching model details:", detailsError); }
                          targetIfcName = modelDetails ? modelDetails.name : "Name Unavailable";
 
                          targetIfcNameEl.textContent = targetIfcName;
@@ -207,20 +214,19 @@
                          console.log(`Targeted File ID: ${targetFileId} (Name: ${targetIfcName})`);
 
                      } else {
-                         targetIfcNameEl.textContent = "Selected object has no model ID property.";
+                         targetIfcNameEl.textContent = "Selected object has no model ID property or it's empty.";
                          targetIfcInfoEl.textContent = "";
-                         console.error("Selected object missing modelId property:", selection.objects[0]);
+                         console.error("Selected object missing modelId property or value:", selection.objects[0]);
                          showStatus("Error: Could not get model ID from selection.", 'error');
                      }
                  } else {
                      targetIfcNameEl.textContent = "No object selected in viewer.";
                      targetIfcInfoEl.textContent = "Select an object from the desired model.";
-                     // Check if selection exists but objects array is empty
-                     if (selection && selection.objects && selection.objects.length === 0) {
-                        console.log("Selection received, but objects array is empty.");
-                     } else if (!selection || !selection.objects){
-                        console.log("Selection object or selection.objects is null/undefined.");
-                     }
+                     if (!hasSelection) console.log("Selection object itself is null/undefined.");
+                     else if (!hasObjects) console.log("selection.objects is null/undefined.");
+                     else if (!hasLength) console.log("selection.objects has no length property.");
+                     else if (selection.objects.length === 0) console.log("Selection received, but objects array is empty.");
+                     else if (!hasFirstObject) console.log("selection.objects[0] is null/undefined.");
                      showStatus("No object selected.", 'info');
                  }
              } catch (error) {
@@ -229,7 +235,6 @@
                  targetIfcInfoEl.textContent = "";
                  showStatus("Error getting selection from viewer.", 'error');
              }
-             // Call checkAndEnableValidateButton AFTER attempting to set targetFileId
              checkAndEnableValidateButton();
          });
 
@@ -238,7 +243,7 @@
          function checkAndEnableValidateButton() {
              console.log("Checking button status:");
              console.log(`  - targetProjectId: ${targetProjectId}`);
-             console.log(`  - targetFileId: ${targetFileId}`); // Log value here
+             console.log(`  - targetFileId: ${targetFileId}`);
              console.log(`  - userAccessToken: ${userAccessToken ? 'Present' : 'Missing'}`);
 
              if (targetProjectId && targetFileId && userAccessToken) {
@@ -251,14 +256,9 @@
                  validateButton.disabled = true;
                  if (!statusDiv.classList.contains('status-error') && !statusDiv.classList.contains('status-info')) {
                     if (!targetFileId && targetProjectId) {
-                        // Use the message set by the targetButton handler if no object selected
                         if (targetIfcNameEl.textContent.includes("No object selected")) {
                              showStatus("No object selected.", 'info');
-                        } else {
-                             // Keep other potential status messages
                         }
-                    } else {
-                        // Keep existing status (e.g., waiting for token)
                     }
                  }
                  console.log("==> Validate button DISABLED.");
