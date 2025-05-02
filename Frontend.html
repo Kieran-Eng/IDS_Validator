@@ -181,14 +181,19 @@
                  const selection = await connectClient.viewer.getSelection();
                  console.log("Selection received:", selection);
 
-                 if (selection && selection.objects && selection.objects.length > 0) {
+                 // Check if selection, selection.objects, and selection.objects[0] exist
+                 if (selection && selection.objects && selection.objects.length > 0 && selection.objects[0]) {
+                     console.log("Selection object [0]:", selection.objects[0]); // Log the first object
                      const selectedModelId = selection.objects[0].modelId;
+                     // *** ADDED LOG HERE ***
+                     console.log(`Extracted selectedModelId: ${selectedModelId}`);
+
                      if (selectedModelId) {
                          targetFileId = selectedModelId; // Assign to global variable
                          // *** ADDED LOG HERE ***
                          console.log(`Assigned targetFileId: ${targetFileId}`);
 
-                         // Try to get model details (wrap in try/catch)
+                         // Try to get model details
                          let modelDetails = null;
                          try {
                              modelDetails = await getModelDetailsById(targetFileId);
@@ -202,14 +207,20 @@
                          console.log(`Targeted File ID: ${targetFileId} (Name: ${targetIfcName})`);
 
                      } else {
-                         targetIfcNameEl.textContent = "Selected object has no model ID.";
+                         targetIfcNameEl.textContent = "Selected object has no model ID property.";
                          targetIfcInfoEl.textContent = "";
-                         console.error("Selected object missing modelId:", selection.objects[0]);
+                         console.error("Selected object missing modelId property:", selection.objects[0]);
                          showStatus("Error: Could not get model ID from selection.", 'error');
                      }
                  } else {
                      targetIfcNameEl.textContent = "No object selected in viewer.";
                      targetIfcInfoEl.textContent = "Select an object from the desired model.";
+                     // Check if selection exists but objects array is empty
+                     if (selection && selection.objects && selection.objects.length === 0) {
+                        console.log("Selection received, but objects array is empty.");
+                     } else if (!selection || !selection.objects){
+                        console.log("Selection object or selection.objects is null/undefined.");
+                     }
                      showStatus("No object selected.", 'info');
                  }
              } catch (error) {
@@ -240,9 +251,14 @@
                  validateButton.disabled = true;
                  if (!statusDiv.classList.contains('status-error') && !statusDiv.classList.contains('status-info')) {
                     if (!targetFileId && targetProjectId) {
-                        showStatus("No object selected.", 'info');
+                        // Use the message set by the targetButton handler if no object selected
+                        if (targetIfcNameEl.textContent.includes("No object selected")) {
+                             showStatus("No object selected.", 'info');
+                        } else {
+                             // Keep other potential status messages
+                        }
                     } else {
-                        // Keep existing status
+                        // Keep existing status (e.g., waiting for token)
                     }
                  }
                  console.log("==> Validate button DISABLED.");
@@ -315,22 +331,3 @@
 
 </body>
 </html>
-```
-
-**Instructions:**
-
-1.  **Deploy** this updated frontend code.
-2.  **Reload** Trimble Connect and your extension.
-3.  Open the **Console** (F12).
-4.  Select an object in the viewer.
-5.  Click the **"Use Selected Object's Model ID"** button.
-6.  Now, look carefully at the console logs that appear *after* `Selection received:`. You should see:
-    * `Assigned targetFileId: YOUR_MODEL_ID`
-    * Then, later, when `checkAndEnableValidateButton` runs, you should see:
-    * `Checking button status:`
-    * `  - targetProjectId: YOUR_PROJECT_ID`
-    * `  - targetFileId: YOUR_MODEL_ID` (This should *not* be null now)
-    * `  - userAccessToken: Present`
-    * `==> Validate button ENABLED.`
-
-Please check the console for the `Assigned targetFileId:` log and the subsequent `targetFileId:` log within the `Checking button status:` block. Does it show the correct ID n
