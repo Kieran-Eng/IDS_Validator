@@ -181,31 +181,21 @@
                  const selection = await connectClient.viewer.getSelection();
                  console.log("Selection received:", selection);
 
-                 // *** ADDED MORE DETAILED LOGGING FOR THE IF CONDITION ***
-                 console.log("--- Evaluating selection condition ---");
+                 // *** CORRECTED CHECK: Check selection array directly ***
+                 console.log("--- Evaluating selection condition (Corrected) ---");
                  let conditionMet = false;
-                 if (selection) {
-                     console.log("Condition check: selection exists? TRUE");
-                     if (selection.objects) {
-                         console.log("Condition check: selection.objects exists? TRUE");
-                         if (typeof selection.objects.length !== 'undefined') {
-                            console.log(`Condition check: selection.objects has length? TRUE (Length: ${selection.objects.length})`);
-                             if (selection.objects.length > 0) {
-                                 console.log("Condition check: selection.objects.length > 0? TRUE");
-                                 if (selection.objects[0]) {
-                                     console.log("Condition check: selection.objects[0] exists? TRUE");
-                                     conditionMet = true; // All parts of the condition passed
-                                 } else { console.log("Condition check: selection.objects[0] exists? FALSE"); }
-                             } else { console.log("Condition check: selection.objects.length > 0? FALSE"); }
-                         } else { console.log("Condition check: selection.objects has length? FALSE"); }
-                     } else { console.log("Condition check: selection.objects exists? FALSE"); }
-                 } else { console.log("Condition check: selection exists? FALSE"); }
+                 if (selection && Array.isArray(selection) && selection.length > 0 && selection[0]) {
+                     console.log("Condition check: selection is valid array with elements? TRUE");
+                     conditionMet = true;
+                 } else {
+                     console.log(`Condition check: selection is valid array with elements? FALSE (selection type: ${typeof selection}, isArray: ${Array.isArray(selection)}, length: ${selection ? selection.length : 'N/A'})`);
+                 }
                  console.log(`--- Condition evaluation result: ${conditionMet} ---`);
-                 // *** END DETAILED LOGGING ***
+                 // *** END CORRECTED CHECK ***
 
-                 if (conditionMet) { // Use the result of the detailed check
-                     console.log("Selection object [0]:", selection.objects[0]);
-                     const selectedModelId = selection.objects[0].modelId;
+                 if (conditionMet) {
+                     console.log("Selection object [0]:", selection[0]); // Access first element
+                     const selectedModelId = selection[0].modelId; // Get modelId from first element
                      console.log(`Extracted selectedModelId: ${selectedModelId} (type: ${typeof selectedModelId})`);
 
                      if (selectedModelId) {
@@ -224,13 +214,12 @@
                      } else {
                          targetIfcNameEl.textContent = "Selected object has no model ID property or it's empty.";
                          targetIfcInfoEl.textContent = "";
-                         console.error("Selected object missing modelId property or value:", selection.objects[0]);
+                         console.error("Selected object missing modelId property or value:", selection[0]);
                          showStatus("Error: Could not get model ID from selection.", 'error');
                      }
                  } else {
                      targetIfcNameEl.textContent = "No object selected in viewer.";
                      targetIfcInfoEl.textContent = "Select an object from the desired model.";
-                     // Log why condition failed based on previous checks if needed
                      showStatus("No object selected or invalid selection data.", 'info');
                  }
              } catch (error) {
