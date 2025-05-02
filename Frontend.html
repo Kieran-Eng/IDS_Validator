@@ -8,13 +8,29 @@
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
-        #results pre { white-space: pre-wrap; word-wrap: break-word; max-height: 300px; overflow-y: auto; background-color: #f3f4f6; border: 1px solid #d1d5db; border-radius: 0.375rem; padding: 1rem; margin-top: 1rem; }
+        #results pre { white-space: pre-wrap; word-wrap: break-word; max-height: 250px; /* Adjusted height */ overflow-y: auto; background-color: #f3f4f6; border: 1px solid #d1d5db; border-radius: 0.375rem; padding: 1rem; margin-top: 1rem; }
         #status { margin-top: 1rem; padding: 0.75rem; border-radius: 0.375rem; }
         .status-info { background-color: #f0f9ff; color: #075985; border: 1px solid #e0f2fe; }
         .status-processing { background-color: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
         .status-success { background-color: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
         .status-error { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
         #targetIfcDisplay { margin-bottom: 1rem; padding: 0.75rem; border: 1px dashed #ccc; border-radius: 0.375rem; background-color: #fafafa; }
+        /* Button Styles */
+        .action-button {
+             display: inline-flex; /* Use inline-flex for side-by-side */
+             justify-content: center; align-items: center;
+             padding: 0.5rem 1rem; margin-top: 0.5rem; margin-right: 0.5rem; /* Added margin */
+             border-width: 1px; border-radius: 0.375rem; /* rounded-md */
+             font-size: 0.875rem; /* text-sm */ font-medium;
+             box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
+             transition: background-color 0.2s;
+             cursor: pointer;
+        }
+        .action-button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .apply-button { border-color: #10b981; background-color: #ecfdf5; color: #047857; } /* green */
+        .apply-button:hover:not(:disabled) { background-color: #d1fae5; }
+        .clear-button { border-color: #f87171; background-color: #fef2f2; color: #b91c1c; } /* red */
+        .clear-button:hover:not(:disabled) { background-color: #fee2e2; }
     </style>
 </head>
 <body class="bg-gray-50 flex items-center justify-center min-h-screen p-4">
@@ -30,7 +46,7 @@
         </div>
          <button type="button" id="targetButton" disabled
                  class="w-full mb-4 flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
-             Use Selected Object's Model ID
+             Use Selected Object's File ID
          </button>
 
         <form id="validationForm" class="space-y-4">
@@ -48,54 +64,64 @@
         </form>
 
         <div id="status" class="hidden"></div>
-        <div id="results" class="mt-6 hidden">
-            <h2 class="text-lg font-semibold text-gray-700 mb-2">Validation Results:</h2>
-            <pre id="resultsContent" class="text-sm"></pre>
+
+        <div id="resultsContainer" class="mt-6 hidden">
+             <h2 class="text-lg font-semibold text-gray-700 mb-2">Validation Results:</h2>
+             <div id="colorButtons" class="mb-2">
+                 <button id="applyColorButton" class="action-button apply-button" disabled>Apply Colours</button>
+                 <button id="clearColorButton" class="action-button clear-button" disabled>Clear Colours</button>
+             </div>
+             <div id="results">
+                 <pre id="resultsContent" class="text-sm"></pre>
+             </div>
         </div>
+
     </div>
 
     <script>
+        // --- DOM Element References ---
         const idsFileInput = document.getElementById('idsFile');
         const targetButton = document.getElementById('targetButton');
         const validateButton = document.getElementById('validateButton');
         const statusDiv = document.getElementById('status');
+        const resultsContainer = document.getElementById('resultsContainer'); // Changed ID
         const resultsDiv = document.getElementById('results');
         const resultsContent = document.getElementById('resultsContent');
         const targetIfcNameEl = document.getElementById('targetIfcName');
         const targetIfcInfoEl = document.getElementById('targetIfcInfo');
         const targetProjectInfoEl = document.getElementById('targetProjectInfo');
         const validationForm = document.getElementById('validationForm');
+        const applyColorButton = document.getElementById('applyColorButton');
+        const clearColorButton = document.getElementById('clearColorButton');
 
-        // Backend API URL - MAKE SURE THIS IS CORRECT
-        const apiUrl = 'https://KMulvey.pythonanywhere.com/validate'; // Or http://localhost:8080
-
+        // --- State Variables ---
+        const apiUrl = 'https://your-username.pythonanywhere.com/validate'; // Replace!
         let connectClient = null;
-        let targetFileId = null; // Stores the File ID from selection
-        let targetIfcName = "Unknown Model";
+        let targetFileId = null;
         let targetProjectId = null;
-        let userAccessToken = null; // Stores user token
+        let userAccessToken = null;
+        let validationResultsData = null; // Store the detailed results from backend
 
-        // --- Workspace API Initialization ---
-        async function initializeConnectAPI() {
-            // ... (Initialization logic remains largely the same) ...
+        // --- Colors ---
+        const COLOR_PASS = { r: 0, g: 255, b: 0, a: 255 }; // Green
+        const COLOR_FAIL = { r: 255, g: 0, b: 0, a: 255 }; // Red
+
+        // --- Workspace API Initialization & Data Fetching ---
+        async function initializeConnectAPI() { /* ... unchanged ... */
             targetIfcNameEl.textContent = "Initializing connection...";
             console.log("Attempting to initialize Workspace API...");
             try {
                 if (typeof TrimbleConnectWorkspace === 'undefined') { throw new Error("Trimble Connect Workspace API client not found."); }
-
                 connectClient = await TrimbleConnectWorkspace.connect(window.parent, (event, data) => {
                     console.log('Event from Trimble Connect:', event, data);
                     if (event === 'extension.accessToken') { handleTokenEvent(data); }
                     if (connectClient && connectClient.viewer) { targetButton.disabled = false; }
                 });
-
                 console.log("Workspace API Client Initialized:", connectClient);
                 showStatus("Workspace API connected. Fetching project context & token permission...", 'info');
                 targetButton.disabled = false;
-
                 await Promise.all([ getProjectContext(), requestTokenPermission() ]);
                 checkAndEnableValidateButton();
-
             } catch (error) {
                 showStatus(`Error initializing Workspace API: ${error.message}`, 'error');
                 console.error("Initialization failed:", error);
@@ -103,10 +129,7 @@
                 targetButton.disabled = true; validateButton.disabled = true;
             }
         }
-
-        // --- Function to get Project Context ---
-        async function getProjectContext() {
-            // ... (getProjectContext logic remains the same) ...
+        async function getProjectContext() { /* ... unchanged ... */
              targetProjectId = null;
              targetProjectInfoEl.textContent = "Fetching project info...";
              if (!connectClient) { console.error("getProjectContext: connectClient null"); targetProjectInfoEl.textContent = "API Client not ready."; return; }
@@ -125,18 +148,14 @@
              } catch(error) { console.error("Failed to get project context:", error); targetProjectInfoEl.textContent = "Error getting project info."; targetProjectId = null; }
              checkAndEnableValidateButton();
         }
-
-        // --- Function to get Model details based on ID ---
-        async function getModelDetailsById(modelId) {
+        async function getModelDetailsById(modelId) { /* ... unchanged ... */
             if (!connectClient || !connectClient.viewer) return null;
             try {
                 const models = await connectClient.viewer.getModels();
                 return models.find(m => m.id === modelId);
             } catch (error) { console.error("Error fetching models to get details:", error); return null; }
         }
-
-        // --- Function to handle Token Event ---
-        function handleTokenEvent(data) {
+        function handleTokenEvent(data) { /* ... unchanged ... */
              if (data && typeof data === 'string' && data !== 'denied') {
                  console.log("Received user access token via event.");
                  userAccessToken = data;
@@ -147,9 +166,7 @@
                   userAccessToken = null; validateButton.disabled = true;
              }
         }
-
-         // --- Function to request user access token ---
-         async function requestTokenPermission() {
+         async function requestTokenPermission() { /* ... unchanged ... */
              userAccessToken = null;
              if (!connectClient || !connectClient.extension) { console.error("Cannot request token: connectClient.extension not available."); showStatus("Cannot request token permission.", 'error'); return; }
              try {
@@ -166,101 +183,56 @@
 
          // --- Function to handle Targeting Button Click ---
          targetButton.addEventListener('click', async () => {
-             targetFileId = null; // Reset target
+             // ... (logic to get selection and set targetFileId remains the same) ...
+             targetFileId = null;
              targetIfcNameEl.textContent = "Getting selection...";
              targetIfcInfoEl.textContent = "";
              validateButton.disabled = true;
              showStatus("Getting selected model ID...", 'processing');
-
-             if (!connectClient || !connectClient.viewer) {
-                 showStatus("Error: Viewer API not available.", 'error');
-                 targetIfcNameEl.textContent = "Viewer API Error.";
-                 return;
-             }
+             if (!connectClient || !connectClient.viewer) { showStatus("Error: Viewer API not available.", 'error'); targetIfcNameEl.textContent = "Viewer API Error."; return; }
              try {
-                 const selection = await connectClient.viewer.getSelection();
-                 console.log("Selection received:", selection);
-
-                 // *** CORRECTED CHECK: Check selection array directly ***
+                 const selection = await connectClient.viewer.getSelection(); console.log("Selection received:", selection);
                  console.log("--- Evaluating selection condition (Corrected) ---");
                  let conditionMet = false;
-                 if (selection && Array.isArray(selection) && selection.length > 0 && selection[0]) {
-                     console.log("Condition check: selection is valid array with elements? TRUE");
-                     conditionMet = true;
-                 } else {
-                     console.log(`Condition check: selection is valid array with elements? FALSE (selection type: ${typeof selection}, isArray: ${Array.isArray(selection)}, length: ${selection ? selection.length : 'N/A'})`);
-                 }
+                 if (selection && Array.isArray(selection) && selection.length > 0 && selection[0]) { console.log("Condition check: selection is valid array with elements? TRUE"); conditionMet = true; }
+                 else { console.log(`Condition check: selection is valid array with elements? FALSE (type: ${typeof selection}, isArray: ${Array.isArray(selection)}, length: ${selection ? selection.length : 'N/A'})`); }
                  console.log(`--- Condition evaluation result: ${conditionMet} ---`);
-                 // *** END CORRECTED CHECK ***
-
                  if (conditionMet) {
-                     console.log("Selection object [0]:", selection[0]); // Access first element
-                     const selectedModelId = selection[0].modelId; // Get modelId from first element
-                     console.log(`Extracted selectedModelId: ${selectedModelId} (type: ${typeof selectedModelId})`);
-
+                     console.log("Selection object [0]:", selection[0]);
+                     const selectedModelId = selection[0].modelId; console.log(`Extracted selectedModelId: ${selectedModelId} (type: ${typeof selectedModelId})`);
                      if (selectedModelId) {
-                         targetFileId = selectedModelId;
-                         console.log(`Assigned targetFileId: ${targetFileId}`);
-
-                         let modelDetails = null;
-                         try { modelDetails = await getModelDetailsById(targetFileId); }
-                         catch (detailsError) { console.error("Error fetching model details:", detailsError); }
+                         targetFileId = selectedModelId; console.log(`Assigned targetFileId: ${targetFileId}`);
+                         let modelDetails = null; try { modelDetails = await getModelDetailsById(targetFileId); } catch (detailsError) { console.error("Error fetching model details:", detailsError); }
                          targetIfcName = modelDetails ? modelDetails.name : "Name Unavailable";
-
-                         targetIfcNameEl.textContent = targetIfcName;
-                         targetIfcInfoEl.textContent = `Targeted File ID: ${targetFileId}`;
-                         console.log(`Targeted File ID: ${targetFileId} (Name: ${targetIfcName})`);
-
-                     } else {
-                         targetIfcNameEl.textContent = "Selected object has no model ID property or it's empty.";
-                         targetIfcInfoEl.textContent = "";
-                         console.error("Selected object missing modelId property or value:", selection[0]);
-                         showStatus("Error: Could not get model ID from selection.", 'error');
-                     }
-                 } else {
-                     targetIfcNameEl.textContent = "No object selected in viewer.";
-                     targetIfcInfoEl.textContent = "Select an object from the desired model.";
-                     showStatus("No object selected or invalid selection data.", 'info');
-                 }
-             } catch (error) {
-                 console.error("Error getting selection:", error);
-                 targetIfcNameEl.textContent = "Error getting selection.";
-                 targetIfcInfoEl.textContent = "";
-                 showStatus("Error getting selection from viewer.", 'error');
-             }
+                         targetIfcNameEl.textContent = targetIfcName; targetIfcInfoEl.textContent = `Targeted File ID: ${targetFileId}`; console.log(`Targeted File ID: ${targetFileId} (Name: ${targetIfcName})`);
+                     } else { targetIfcNameEl.textContent = "Selected object has no model ID property."; targetIfcInfoEl.textContent = ""; console.error("Selected object missing modelId:", selection[0]); showStatus("Error: Could not get model ID.", 'error'); }
+                 } else { targetIfcNameEl.textContent = "No object selected."; targetIfcInfoEl.textContent = "Select object from desired model."; showStatus("No object selected.", 'info'); }
+             } catch (error) { console.error("Error getting selection:", error); targetIfcNameEl.textContent = "Error getting selection."; targetIfcInfoEl.textContent = ""; showStatus("Error getting selection.", 'error'); }
              checkAndEnableValidateButton();
          });
 
-
          // --- Helper to check if validate button should be enabled ---
          function checkAndEnableValidateButton() {
+             // ... (logic remains the same) ...
              console.log("Checking button status:");
              console.log(`  - targetProjectId: ${targetProjectId}`);
              console.log(`  - targetFileId: ${targetFileId}`);
              console.log(`  - userAccessToken: ${userAccessToken ? 'Present' : 'Missing'}`);
-
-             if (targetProjectId && targetFileId && userAccessToken) {
-                 validateButton.disabled = false;
-                 if (!statusDiv.classList.contains('status-error') && !statusDiv.classList.contains('status-info')) {
-                    showStatus("Ready to validate.", 'success');
-                 }
-                 console.log("==> Validate button ENABLED.");
-             } else {
-                 validateButton.disabled = true;
-                 if (!statusDiv.classList.contains('status-error') && !statusDiv.classList.contains('status-info')) {
-                    if (!targetFileId && targetProjectId) {
-                        if (targetIfcNameEl.textContent.includes("No object selected")) {
-                             showStatus("No object selected.", 'info');
-                        }
-                    }
-                 }
-                 console.log("==> Validate button DISABLED.");
+             const canValidate = targetProjectId && targetFileId && userAccessToken;
+             validateButton.disabled = !canValidate;
+             if (canValidate && !statusDiv.classList.contains('status-error') && !statusDiv.classList.contains('status-info')) {
+                 showStatus("Ready to validate.", 'success');
+             } else if (!canValidate && !statusDiv.classList.contains('status-error') && !statusDiv.classList.contains('status-info')) {
+                 if (!targetFileId && targetProjectId) { showStatus("No object selected.", 'info'); }
+                 else if (!userAccessToken) { /* Keep pending message */ }
+                 else { /* Keep other potential messages */ }
              }
+             console.log(`==> Validate button ${canValidate ? 'ENABLED' : 'DISABLED'}.`);
          }
 
         // --- Form Submission Logic ---
         validationForm.addEventListener('submit', async (event) => {
-            // ... (Submit logic remains the same) ...
+            // ... (Submit logic remains the same - sends IDs and token to backend) ...
              event.preventDefault();
             const idsFile = idsFileInput.files[0];
             console.log("--- Submit Handler Started ---");
@@ -274,8 +246,12 @@
                  return;
             }
             validateButton.disabled = true;
+            applyColorButton.disabled = true; // Disable color buttons during validation
+            clearColorButton.disabled = true;
             showStatus('Processing... Sending data to backend server.', 'processing');
-            resultsDiv.classList.add('hidden');
+            resultsContainer.classList.add('hidden'); // Hide previous results container
+            validationResultsData = null; // Clear previous results data
+
             const formData = new FormData();
             formData.append('projectId', targetProjectId);
             formData.append('ifcFileId', targetFileId);
@@ -285,24 +261,157 @@
              for (let key of formData.keys()) { console.log(`  - ${key}`); }
             try {
                 const response = await fetch(apiUrl, { method: 'POST', body: formData });
-                const resultData = await response.json();
+                const resultData = await response.json(); // Store results
+                validationResultsData = resultData; // Store for coloring
                 if (response.ok) {
                     showStatus(`Validation complete: ${resultData.message || 'Status received.'}`, 'success');
-                    displayResults(resultData);
+                    displayResults(resultData); // Display text results
+                    applyColorButton.disabled = false; // Enable color buttons on success
+                    clearColorButton.disabled = false;
                 } else {
                     const errorMessage = resultData.error || `Server responded with status ${response.status}`;
                     console.error('Backend API Error:', resultData);
                     showStatus(`Error from backend: ${errorMessage}`, 'error');
-                    resultsDiv.classList.add('hidden');
+                    resultsContainer.classList.add('hidden');
                 }
             } catch (error) {
                 console.error('Network or Fetch Error to Backend:', error);
                 showStatus('Error: Could not connect to the validation server.', 'error');
-                resultsDiv.classList.add('hidden');
+                resultsContainer.classList.add('hidden');
             } finally {
+                // Re-enable validate button only if initial conditions are met
                 validateButton.disabled = !(targetProjectId && targetFileId && userAccessToken);
             }
         });
+
+        // --- Function to Apply Coloring ---
+        applyColorButton.addEventListener('click', async () => {
+            if (!validationResultsData || !validationResultsData.details || !connectClient || !connectClient.viewer) {
+                showStatus("No validation results available or API not ready.", 'error');
+                return;
+            }
+            if (!targetFileId) {
+                 showStatus("Target File ID is missing, cannot apply colors.", 'error');
+                 return;
+            }
+
+            console.log("Applying colors based on results...");
+            showStatus("Applying colors...", 'processing');
+            applyColorButton.disabled = true; // Disable during processing
+            clearColorButton.disabled = true;
+
+            try {
+                let allPassedGuids = new Set();
+                let allFailedGuids = new Set();
+
+                // Aggregate all passed and failed GUIDs across all specifications
+                for (const specName in validationResultsData.details) {
+                    const specResult = validationResultsData.details[specName];
+                    if (specResult.passed_guids) {
+                        specResult.passed_guids.forEach(guid => allPassedGuids.add(guid));
+                    }
+                    if (specResult.failed_guids) {
+                        specResult.failed_guids.forEach(guid => allFailedGuids.add(guid));
+                    }
+                }
+
+                // Elements that failed override passing status
+                const finalPassedGuids = [...allPassedGuids].filter(guid => !allFailedGuids.has(guid));
+                const finalFailedGuids = [...allFailedGuids];
+
+                console.log("Final Passed GUIDs:", finalPassedGuids);
+                console.log("Final Failed GUIDs:", finalFailedGuids);
+
+                // Prepare API calls
+                const colorPromises = [];
+
+                // Apply green to passed objects
+                if (finalPassedGuids.length > 0) {
+                    const selector = { objectGuids: finalPassedGuids };
+                    const state = { color: COLOR_PASS, clear: false }; // Don't clear other states
+                    console.log("Setting state for PASSING objects:", selector, state);
+                    colorPromises.push(connectClient.viewer.setObjectState(selector, state));
+                }
+
+                // Apply red to failed objects
+                if (finalFailedGuids.length > 0) {
+                    const selector = { objectGuids: finalFailedGuids };
+                    const state = { color: COLOR_FAIL, clear: false }; // Don't clear other states
+                    console.log("Setting state for FAILING objects:", selector, state);
+                    colorPromises.push(connectClient.viewer.setObjectState(selector, state));
+                }
+
+                if (colorPromises.length > 0) {
+                    await Promise.all(colorPromises);
+                    showStatus("Colors applied successfully.", 'success');
+                    console.log("Coloring applied.");
+                } else {
+                     showStatus("No objects found to color based on results.", 'info');
+                     console.log("No coloring applied (no pass/fail GUIDs).");
+                }
+
+            } catch (error) {
+                console.error("Error applying colors:", error);
+                showStatus(`Error applying colors: ${error.message}`, 'error');
+            } finally {
+                 applyColorButton.disabled = false; // Re-enable buttons
+                 clearColorButton.disabled = false;
+            }
+        });
+
+        // --- Function to Clear Coloring ---
+        clearColorButton.addEventListener('click', async () => {
+             if (!connectClient || !connectClient.viewer) {
+                showStatus("API not ready.", 'error');
+                return;
+            }
+             if (!validationResultsData || !validationResultsData.details) {
+                 showStatus("No validation results available to clear.", 'info');
+                 return;
+             }
+             if (!targetFileId) {
+                 showStatus("Target File ID is missing, cannot clear colors.", 'error');
+                 return;
+            }
+
+            console.log("Clearing colors...");
+            showStatus("Clearing colors...", 'processing');
+            applyColorButton.disabled = true; // Disable during processing
+            clearColorButton.disabled = true;
+
+            try {
+                 let allGuidsToClear = new Set();
+                 for (const specName in validationResultsData.details) {
+                     const specResult = validationResultsData.details[specName];
+                     if (specResult.passed_guids) specResult.passed_guids.forEach(guid => allGuidsToClear.add(guid));
+                     if (specResult.failed_guids) specResult.failed_guids.forEach(guid => allGuidsToClear.add(guid));
+                 }
+
+                 const guidsArray = [...allGuidsToClear];
+                 console.log("GUIDs to clear:", guidsArray);
+
+                 if (guidsArray.length > 0) {
+                     const selector = { objectGuids: guidsArray };
+                     // State with clear: true resets color and potentially other states
+                     const state = { clear: true };
+                     console.log("Clearing state for objects:", selector, state);
+                     await connectClient.viewer.setObjectState(selector, state);
+                     showStatus("Colors cleared successfully.", 'success');
+                     console.log("Coloring cleared.");
+                 } else {
+                     showStatus("No validation results found to clear colors from.", 'info');
+                     console.log("No coloring to clear.");
+                 }
+
+            } catch (error) {
+                console.error("Error clearing colors:", error);
+                showStatus(`Error clearing colors: ${error.message}`, 'error');
+            } finally {
+                 applyColorButton.disabled = false; // Re-enable buttons
+                 clearColorButton.disabled = false;
+            }
+        });
+
 
         // --- Helper Functions ---
         function showStatus(message, type = 'processing') {
@@ -313,8 +422,12 @@
             statusDiv.classList.remove('hidden');
         }
         function displayResults(data) {
-             resultsContent.textContent = JSON.stringify(data, null, 2);
-            resultsDiv.classList.remove('hidden');
+             resultsContainer.classList.remove('hidden'); // Show the whole results container
+             resultsContent.textContent = JSON.stringify(data, null, 2); // Display text results
+             // Enable/disable color buttons based on whether results exist
+             const hasResults = data && data.details && Object.keys(data.details).length > 0;
+             applyColorButton.disabled = !hasResults;
+             clearColorButton.disabled = !hasResults;
         }
 
         // --- Initialize API on page load ---
