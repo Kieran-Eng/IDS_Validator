@@ -182,38 +182,67 @@
             if (!validationResultsData || !validationResultsData.details || !connectClient || !connectClient.viewer) {
                 showStatus("No validation results available or API not ready.", 'error'); return;
             }
-            if (!targetFileId) { // Use targetFileId which should hold the relevant model ID
+            if (!targetFileId) {
                  showStatus("Target File ID is missing, cannot apply colors.", 'error'); return;
             }
 
-            console.log("Applying colors based on results per specification...");
+            console.log("Applying colors based on aggregated results...");
             showStatus("Applying colors...", 'processing');
             applyColorButton.disabled = true; clearColorButton.disabled = true;
 
             try {
-                const colorPromises = [];
-                // Iterate through each specification result
+                // --- Aggregate results FIRST ---
+                let finalPassedGuids = new Set();
+                let finalFailedGuids = new Set();
+                let allCheckedGuids = new Set(); // Track all GUIDs involved in results
+
                 for (const specName in validationResultsData.details) {
                     const specResult = validationResultsData.details[specName];
-                    console.log(`Processing spec: ${specName}, Status: ${specResult.status}`);
-
-                    // Apply green to passed objects for this spec
-                    if (specResult.passed_guids && specResult.passed_guids.length > 0) {
-                        const selector = { objectGuids: specResult.passed_guids };
-                        const state = { color: COLOR_PASS, clear: false };
-                        console.log(`  Applying PASS color to ${specResult.passed_guids.length} GUIDs`);
-                        colorPromises.push(connectClient.viewer.setObjectState(selector, state));
+                    if (specResult.passed_guids) {
+                        specResult.passed_guids.forEach(guid => allCheckedGuids.add(guid));
                     }
-
-                    // Apply red to failed objects for this spec
-                    if (specResult.failed_guids && specResult.failed_guids.length > 0) {
-                        const selector = { objectGuids: specResult.failed_guids };
-                        const state = { color: COLOR_FAIL, clear: false };
-                         console.log(`  Applying FAIL color to ${specResult.failed_guids.length} GUIDs`);
-                       colorPromises.push(connectClient.viewer.setObjectState(selector, state));
+                    if (specResult.failed_guids) {
+                        specResult.failed_guids.forEach(guid => {
+                            allCheckedGuids.add(guid);
+                            finalFailedGuids.add(guid); // Any failure marks it as failed overall
+                        });
                     }
                 }
 
+                // Determine final passed set: all checked minus those that failed
+                allCheckedGuids.forEach(guid => {
+                    if (!finalFailedGuids.has(guid)) {
+                        finalPassedGuids.add(guid);
+                    }
+                });
+                // --- End Aggregation ---
+
+                const passedGuidsArray = [...finalPassedGuids];
+                const failedGuidsArray = [...finalFailedGuids];
+
+                console.log("Final Aggregated Passed GUIDs:", passedGuidsArray);
+                console.log("Final Aggregated Failed GUIDs:", failedGuidsArray);
+
+                // Prepare API calls
+                const colorPromises = [];
+
+                // Apply green to passed objects
+                if (passedGuidsArray.length > 0) {
+                    const selector = { objectGuids: passedGuidsArray };
+                    const state = { color: COLOR_PASS, clear: false };
+                    console.log("Setting state for FINAL PASSING objects:", selector, state);
+                    colorPromises.push(connectClient.viewer.setObjectState(selector, state));
+                }
+
+                // Apply red to failed objects
+                if (failedGuidsArray.length > 0) {
+                    const selector = { objectGuids: failedGuidsArray };
+                    const state = { color: COLOR_FAIL, clear: false };
+                    console.log("Setting state for FINAL FAILING objects:", selector, state);
+                    colorPromises.push(connectClient.viewer.setObjectState(selector, state));
+                }
+
+                // Execute coloring
                 if (colorPromises.length > 0) {
                     await Promise.all(colorPromises);
                     showStatus("Colors applied successfully.", 'success');
@@ -243,7 +272,7 @@
 
             try {
                  let allGuidsToClear = new Set();
-                 // Collect all GUIDs that were part of the validation result (passed or failed)
+                 // Collect all GUIDs that were part of the validation result
                  for (const specName in validationResultsData.details) {
                      const specResult = validationResultsData.details[specName];
                      if (specResult.passed_guids) specResult.passed_guids.forEach(guid => allGuidsToClear.add(guid));
@@ -255,8 +284,7 @@
 
                  if (guidsArray.length > 0) {
                      const selector = { objectGuids: guidsArray };
-                     // State with clear: true resets color and potentially other states
-                     const state = { clear: true };
+                     const state = { clear: true }; // Use clear: true to reset
                      console.log("Clearing state for objects:", selector, state);
                      await connectClient.viewer.setObjectState(selector, state);
                      showStatus("Colors cleared successfully.", 'success');
