@@ -223,34 +223,38 @@
                 console.log("Final Aggregated Passed GUIDs:", passedGuidsArray);
                 console.log("Final Aggregated Failed GUIDs:", failedGuidsArray);
 
-                // Prepare API calls
-                const colorPromises = [];
+                // --- Apply Colors (Clear -> Fail -> Pass) ---
+                const allGuidsToProcess = [...allCheckedGuids];
+                if (allGuidsToProcess.length > 0) {
+                    console.log("Step 1: Clearing previous colors for relevant objects...");
+                    const clearSelector = { objectGuids: allGuidsToProcess };
+                    const clearState = { clear: true };
+                    await connectClient.viewer.setObjectState(clearSelector, clearState).catch(err => console.error("Error during clear state:", err));
+                    console.log("Clear state applied.");
 
-                // Apply green to passed objects
-                if (passedGuidsArray.length > 0) {
-                    const selector = { objectGuids: passedGuidsArray };
-                    const state = { color: COLOR_PASS, clear: false };
-                    console.log("Setting state for FINAL PASSING objects:", selector, state);
-                    colorPromises.push(connectClient.viewer.setObjectState(selector, state));
-                }
+                    // Apply red to failed objects AFTER clearing
+                    if (failedGuidsArray.length > 0) {
+                         console.log("Step 2: Applying FAIL color...");
+                         const failSelector = { objectGuids: failedGuidsArray };
+                         const failState = { color: COLOR_FAIL, clear: false }; // Ensure clear is false
+                         await connectClient.viewer.setObjectState(failSelector, failState).catch(err => console.error("Error applying FAIL state:", err));
+                         console.log("FAIL color applied.");
+                    }
 
-                // Apply red to failed objects
-                if (failedGuidsArray.length > 0) {
-                    const selector = { objectGuids: failedGuidsArray };
-                    const state = { color: COLOR_FAIL, clear: false };
-                    console.log("Setting state for FINAL FAILING objects:", selector, state);
-                    colorPromises.push(connectClient.viewer.setObjectState(selector, state));
-                }
-
-                // Execute coloring
-                if (colorPromises.length > 0) {
-                    await Promise.all(colorPromises);
+                    // Apply green to passed objects AFTER clearing and applying fails
+                    if (passedGuidsArray.length > 0) {
+                         console.log("Step 3: Applying PASS color...");
+                         const passSelector = { objectGuids: passedGuidsArray };
+                         const passState = { color: COLOR_PASS, clear: false }; // Ensure clear is false
+                         await connectClient.viewer.setObjectState(passSelector, passState).catch(err => console.error("Error applying PASS state:", err));
+                          console.log("PASS color applied.");
+                   }
                     showStatus("Colors applied successfully.", 'success');
-                    console.log("Coloring applied.");
                 } else {
                      showStatus("No objects found to color based on results.", 'info');
                      console.log("No coloring applied (no pass/fail GUIDs in results).");
                 }
+                // --- End Apply Colors ---
 
             } catch (error) {
                 console.error("Error applying colors:", error);
@@ -260,48 +264,32 @@
             }
         });
 
-        // --- REVISED Function to Clear Coloring ---
+        // --- Function to Clear Coloring ---
         clearColorButton.addEventListener('click', async () => {
+            // ... (Clear logic remains the same - collects all GUIDs and clears) ...
              if (!connectClient || !connectClient.viewer) { showStatus("API not ready.", 'error'); return; }
              if (!validationResultsData || !validationResultsData.details) { showStatus("No validation results available to clear.", 'info'); return; }
              if (!targetFileId) { showStatus("Target File ID is missing, cannot clear colors.", 'error'); return; }
-
-            console.log("Clearing colors for validated objects...");
-            showStatus("Clearing colors...", 'processing');
-            applyColorButton.disabled = true; clearColorButton.disabled = true;
-
-            try {
+             console.log("Clearing colors for validated objects...");
+             showStatus("Clearing colors...", 'processing');
+             applyColorButton.disabled = true; clearColorButton.disabled = true;
+             try {
                  let allGuidsToClear = new Set();
-                 // Collect all GUIDs that were part of the validation result
                  for (const specName in validationResultsData.details) {
                      const specResult = validationResultsData.details[specName];
                      if (specResult.passed_guids) specResult.passed_guids.forEach(guid => allGuidsToClear.add(guid));
                      if (specResult.failed_guids) specResult.failed_guids.forEach(guid => allGuidsToClear.add(guid));
                  }
-
-                 const guidsArray = [...allGuidsToClear];
-                 console.log("GUIDs to clear:", guidsArray);
-
+                 const guidsArray = [...allGuidsToClear]; console.log("GUIDs to clear:", guidsArray);
                  if (guidsArray.length > 0) {
-                     const selector = { objectGuids: guidsArray };
-                     const state = { clear: true }; // Use clear: true to reset
+                     const selector = { objectGuids: guidsArray }; const state = { clear: true };
                      console.log("Clearing state for objects:", selector, state);
                      await connectClient.viewer.setObjectState(selector, state);
-                     showStatus("Colors cleared successfully.", 'success');
-                     console.log("Coloring cleared.");
-                 } else {
-                     showStatus("No validation results found to clear colors from.", 'info');
-                     console.log("No coloring to clear.");
-                 }
-
-            } catch (error) {
-                console.error("Error clearing colors:", error);
-                showStatus(`Error clearing colors: ${error.message}`, 'error');
-            } finally {
-                 applyColorButton.disabled = false; clearColorButton.disabled = false;
-            }
+                     showStatus("Colors cleared successfully.", 'success'); console.log("Coloring cleared.");
+                 } else { showStatus("No validation results found to clear colors from.", 'info'); console.log("No coloring to clear."); }
+             } catch (error) { console.error("Error clearing colors:", error); showStatus(`Error clearing colors: ${error.message}`, 'error');
+             } finally { applyColorButton.disabled = false; clearColorButton.disabled = false; }
         });
-
 
         // --- Helper Functions ---
         function showStatus(message, type = 'processing') { /* ... unchanged ... */
@@ -320,3 +308,23 @@
 
 </body>
 </html>
+```
+
+**Key Changes:**
+
+* **`applyColorButton` Listener:**
+    * Performs the same aggregation to get `finalPassedGuids` and `finalFailedGuids`.
+    * **Clears First:** It now makes an initial `setObjectState` call with `{ clear: true }` for *all* GUIDs involved in the results (`allCheckedGuids`).
+    * **Applies Failures:** *After* the clear completes (implicitly via `await`), it makes the `setObjectState` call for `finalFailedGuids` with the red colour.
+    * **Applies Passes:** *After* applying failures, it makes the `setObjectState` call for `finalPassedGuids` with the green colour.
+    * Added basic `.catch()` to log errors for individual `setObjectState` calls.
+
+**Instructions:**
+
+1.  **Deploy** this updated frontend code.
+2.  **Reload** Trimble Connect and your extension.
+3.  Run the validation process again.
+4.  Click **"Apply Colours"**.
+5.  Observe the viewer. Does the wall now correctly show green and the door red?
+
+This revised sequence (Clear -> Apply Fail -> Apply Pass) should prevent the colours from overwriting each other incorrect
